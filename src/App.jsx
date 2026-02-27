@@ -1047,7 +1047,7 @@ export default function App() {
   .sku{font-size:9px;color:#9ca3af;margin-top:1px}
   .col-td{min-width:80px}
   .color-cell{display:flex;align-items:center;gap:5px;font-size:10px}
-  .col-img{width:18px;height:18px;border-radius:3px;object-fit:cover;border:1px solid #e5e7eb;flex-shrink:0}
+  .col-img{width:40px;height:40px;border-radius:5px;object-fit:cover;border:1px solid #e5e7eb;flex-shrink:0}
   .col-dot{display:inline-block;width:9px;height:9px;border-radius:50%;flex-shrink:0}
   .sizes-td{padding:3px 7px}
   .sizes-wrap{display:flex;flex-wrap:wrap;gap:3px}
