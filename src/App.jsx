@@ -923,6 +923,8 @@ export default function App() {
       return copy;
     });
     setArticlesDB(restoredArts);
+    setEditCh(ch);
+    setChf({
       customerId: ch.customerId || "",
       lrNumber: ch.lrNumber || "",
       remarks: ch.remarks || "",
