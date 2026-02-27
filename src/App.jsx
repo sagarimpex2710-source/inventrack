@@ -1440,6 +1440,9 @@ GUIDELINES:
             <button onClick={() => setShowBackup(true)} title="Backup & Restore" style={{padding:"7px 10px",borderRadius:8,border:`1px solid ${S.bdr}`,background:S.card,color:S.txt2,cursor:"pointer",display:"flex",alignItems:"center",gap:5,fontFamily:S.f,fontSize:11,fontWeight:600}}>
               <DatabaseBackup size={15}/><span className="tab-label">Backup</span>
             </button>
+            <button onClick={() => setShowCompany(true)} title="Company Settings" style={{padding:"7px 10px",borderRadius:8,border:`1px solid ${S.bdr}`,background:S.card,color:S.txt2,cursor:"pointer",display:"flex",alignItems:"center",gap:5,fontFamily:S.f,fontSize:11,fontWeight:600}}>
+              <Building size={15}/><span className="tab-label">Company</span>
+            </button>
             <button onClick={() => setIsLocked(true)} title="Lock" style={{padding:7,borderRadius:8,border:`1px solid ${S.bdr}`,background:S.card,color:S.txt2,cursor:"pointer",display:"flex"}}><Lock size={15}/></button>
           </div>
         </div>
@@ -2119,11 +2122,12 @@ GUIDELINES:
                 {/* Header */}
                 <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:10}}>
                   <div style={{display:"flex",alignItems:"center",gap:8}}>
-                    {col?.image && <img src={col.image} alt="" style={{width:36,height:36,borderRadius:8,objectFit:"cover",border:`1px solid ${S.bdr}`}}/>}
-                    <span style={{fontSize:12,fontWeight:700,color:S.acc}}>Item #{ii+1}</span>
+                    {col?.image && <img src={col.image} alt="" style={{width:40,height:40,borderRadius:8,objectFit:"cover",border:`1px solid ${S.bdr}`}}/>}
+                    <span style={{fontSize:14,fontWeight:700,color:S.acc}}>Item #{ii+1}</span>
                     {art && col && <ColorDot name={col.name}/>}
+                    {art && <span style={{fontSize:13,fontWeight:600,color:S.txt}}>{art.name}</span>}
                   </div>
-                  <button onClick={() => rmChItem(ii)} style={{background:S.redL,border:"none",borderRadius:6,padding:4,cursor:"pointer",display:"flex",color:S.red}}><Trash2 size={13}/></button>
+                  <button onClick={() => rmChItem(ii)} style={{background:S.redL,border:"none",borderRadius:6,padding:6,cursor:"pointer",display:"flex",color:S.red}}><Trash2 size={15}/></button>
                 </div>
 
                 {/* Article + Color selects */}
@@ -2135,22 +2139,21 @@ GUIDELINES:
                 {/* Size qty + price inputs */}
                 {col && availSizes.length > 0 && (
                   <div>
-                    <div style={{fontSize:10,fontWeight:700,color:S.txt3,textTransform:"uppercase",marginBottom:8}}>Qty & Rate per size</div>
-                    <div style={{display:"flex",gap:8,flexWrap:"wrap"}}>
+                    <div style={{fontSize:12,fontWeight:700,color:S.txt3,textTransform:"uppercase",marginBottom:10}}>Qty & Rate per size</div>
+                    <div style={{display:"flex",gap:10,flexWrap:"wrap"}}>
                       {availSizes.map(sz => {
                         const avail = col.sizes[sz]?.qty || 0;
                         const defaultPrice = col.sizes[sz]?.price || 0;
                         const customPrice = it.prices?.[sz];
-                        const price = customPrice !== undefined ? customPrice : defaultPrice;
                         const qty = it.sizes[sz] || 0;
                         return (
-                          <div key={sz} style={{background:S.card,borderRadius:10,border:`1.5px solid ${qty > 0 ? S.acc : S.bdr}`,padding:"8px 10px",textAlign:"center",minWidth:78,transition:"border-color .15s"}}>
-                            <div style={{fontSize:11,fontWeight:700,color:qty>0?S.acc:S.txt2}}>{sz}</div>
-                            <input type="number" min="0" max={avail} placeholder="0" value={it.sizes[sz] || ""} onChange={e => updChQty(ii,sz,Math.min(Number(e.target.value)||0,avail))} style={{width:"100%",textAlign:"center",background:"transparent",border:"none",outline:"none",color:S.txt,fontFamily:S.fm,fontSize:16,fontWeight:700,padding:"4px 0"}}/>
-                            <div style={{fontSize:9,color:S.txt3,marginBottom:4}}>/ {avail} pcs</div>
-                            <div style={{borderTop:`1px dashed ${S.bdr}`,paddingTop:4,display:"flex",alignItems:"center",gap:2}}>
-                              <span style={{fontSize:9,color:S.txt3}}>₹</span>
-                              <input type="number" min="0" placeholder={defaultPrice||"Rate"} value={customPrice !== undefined ? customPrice : (defaultPrice || "")} onChange={e => updChPrice(ii,sz,e.target.value)} style={{width:"100%",textAlign:"center",background:"transparent",border:"none",outline:"none",color:S.grn,fontFamily:S.fm,fontSize:11,fontWeight:700,padding:0}}/>
+                          <div key={sz} style={{background:S.card,borderRadius:12,border:`2px solid ${qty > 0 ? S.acc : S.bdr}`,padding:"10px 12px",textAlign:"center",minWidth:88,transition:"border-color .15s"}}>
+                            <div style={{fontSize:14,fontWeight:800,color:qty>0?S.acc:S.txt2,marginBottom:4}}>{sz}</div>
+                            <input type="number" min="0" max={avail} placeholder="0" value={it.sizes[sz] || ""} onChange={e => updChQty(ii,sz,Math.min(Number(e.target.value)||0,avail))} style={{width:"100%",textAlign:"center",background:"transparent",border:"none",outline:"none",color:S.txt,fontFamily:S.fm,fontSize:22,fontWeight:800,padding:"2px 0"}}/>
+                            <div style={{fontSize:11,color:S.txt3,marginBottom:6}}>/ {avail} pcs</div>
+                            <div style={{borderTop:`1px dashed ${S.bdr}`,paddingTop:6,display:"flex",alignItems:"center",justifyContent:"center",gap:2}}>
+                              <span style={{fontSize:12,color:S.txt3,fontWeight:600}}>₹</span>
+                              <input type="number" min="0" placeholder={defaultPrice||"Rate"} value={customPrice !== undefined ? customPrice : (defaultPrice || "")} onChange={e => updChPrice(ii,sz,e.target.value)} style={{width:"100%",textAlign:"center",background:"transparent",border:"none",outline:"none",color:S.grn,fontFamily:S.fm,fontSize:14,fontWeight:700,padding:0}}/>
                             </div>
                           </div>
                         );
