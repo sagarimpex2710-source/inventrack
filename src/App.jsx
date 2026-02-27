@@ -497,7 +497,7 @@ export default function App() {
   const [showCompany, setShowCompany] = useState(false);
   const [expandedCh, setExpandedCh] = useState(null);
   const [companyLogo, setCompanyLogo] = useState(null);
-  const [co, setCo] = useState({name:"",address:"",phone:"",email:"",gstin:""});
+  const [co, setCo] = useState({name:"Sagar Impex",address:"Jaipur, Rajasthan",phone:"",email:"",gstin:""});
   const blankCh = {customerId:"",lrNumber:"",remarks:"",items:[]};
   const [chf, setChf] = useState(blankCh);
   const [editCh, setEditCh] = useState(null); // challan being edited
@@ -902,10 +902,11 @@ export default function App() {
     setChf({...chf, items});
   };
   const updChQty = (i, sz, val) => { const items = [...chf.items]; items[i] = {...items[i], sizes:{...items[i].sizes,[sz]:Math.max(0,Number(val)||0)}}; setChf({...chf, items}); };
+  const updChPrice = (i, sz, val) => { const items = [...chf.items]; items[i] = {...items[i], prices:{...items[i].prices,[sz]:Math.max(0,Number(val)||0)}}; setChf({...chf, items}); };
   const getChArt = it => articles.find(a => a.id === it.articleId);
   const getChCol = it => { const a = getChArt(it); return a?.colors[Number(it.colorIdx)]; };
   const chTotQty = chf.items.reduce((s,it) => s + Object.values(it.sizes).reduce((ss,q) => ss + q, 0), 0);
-  const chTotAmt = chf.items.reduce((s,it) => { const col = getChCol(it); if (!col) return s; return s + Object.entries(it.sizes).reduce((ss,[sz,q]) => ss + q * (col.sizes[sz]?.price || 0), 0); }, 0);
+  const chTotAmt = chf.items.reduce((s,it) => { const col = getChCol(it); if (!col) return s; return s + Object.entries(it.sizes).reduce((ss,[sz,q]) => { const p = (it.prices?.[sz] !== undefined && it.prices[sz] !== "") ? Number(it.prices[sz]) : (col.sizes[sz]?.price || 0); return ss + q * p; }, 0); }, 0);
 
   const openNewChallan = () => { setEditCh(null); setChf({...blankCh}); setShowChModal(true); };
 
@@ -943,7 +944,11 @@ export default function App() {
     if (valid.length === 0) return;
     const challanItems = valid.map(it => {
       const art = getChArt(it); const col = getChCol(it);
-      const sizesData = Object.entries(it.sizes).filter(([,q]) => q > 0).map(([sz,q]) => ({size:sz,qty:q,price:col.sizes[sz]?.price||0,amount:q*(col.sizes[sz]?.price||0)}));
+      const sizesData = Object.entries(it.sizes).filter(([,q]) => q > 0).map(([sz,q]) => {
+        const defaultPrice = col.sizes[sz]?.price || 0;
+        const price = (it.prices?.[sz] !== undefined && it.prices[sz] !== "") ? Number(it.prices[sz]) : defaultPrice;
+        return {size:sz, qty:q, price, amount:q*price};
+      });
       return {
         articleId: art.id, colorIdx: Number(it.colorIdx),
         articleName:art.name, skuId:art.skuId, colorName:col.name, colorImage:col.image,
@@ -996,60 +1001,110 @@ export default function App() {
   };
 
   /* ── Challan PDF/Print ── */
+  const rupee = (n) => "Rs." + Number(n).toLocaleString("en-IN");
   const getChallanHTML = ch => {
-    const rows = ch.items.flatMap(it =>
-      it.sizes.map((sz, si) => `
-        <tr>
-          <td>${si===0 ? `<div class="art-name">${it.articleName}</div><div class="sku">${it.skuId}</div>` : ""}</td>
-          <td>${si===0 ? `<div class="color-cell">${it.colorImage ? `<img src="${it.colorImage}" class="col-img"/>` : ""}<span class="col-dot" style="background:hsl(${it.colorName.split("").reduce((a,c)=>a+c.charCodeAt(0),0)%360},55%,55%)"></span>${it.colorName}</div>` : ""}</td>
-          <td class="sz">${sz.size}</td>
-          <td class="center">${sz.qty}</td>
-          <td class="right">${fmtS(sz.price)}</td>
-          <td class="right bold">${fmtS(sz.amount)}</td>
-        </tr>`)
-    ).join("");
+    // One row per article+color, sizes shown horizontally — much more compact
+    const rows = ch.items.map((it, idx) => {
+      const sizeCells = it.sizes.map(sz =>
+        `<td class="sz-cell"><div class="sz-lbl">${sz.size}</div><div class="sz-qty">${sz.qty}</div><div class="sz-rate">${rupee(sz.price)}</div></td>`
+      ).join("");
+      const rowAmt = it.sizes.reduce((s,sz) => s + sz.amount, 0);
+      const rowQty = it.sizes.reduce((s,sz) => s + sz.qty, 0);
+      const bg = idx % 2 === 0 ? "#fff" : "#f9fafb";
+      return `<tr style="background:${bg}">
+        <td class="sno">${idx+1}</td>
+        <td class="art-td"><div class="art-name">${it.articleName}</div><div class="sku">${it.skuId}</div></td>
+        <td class="col-td"><div class="color-cell">${it.colorImage?`<img src="${it.colorImage}" class="col-img"/>`:""}
+          <span class="col-dot" style="background:hsl(${it.colorName.split("").reduce((a,c)=>a+c.charCodeAt(0),0)%360},55%,55%)"></span>${it.colorName}</div></td>
+        <td class="sizes-td"><div class="sizes-wrap">${sizeCells}</div></td>
+        <td class="qty-td bold">${rowQty}</td>
+        <td class="amt-td bold">${rupee(rowAmt)}</td>
+      </tr>`;
+    }).join("");
+
     return `<!DOCTYPE html><html><head><title>${ch.number}</title>
 <style>
   *{margin:0;padding:0;box-sizing:border-box}
-  body{font-family:'Segoe UI',sans-serif;padding:28px;color:#1a1a2e;font-size:13px}
-  .hdr{display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:20px;padding-bottom:14px;border-bottom:3px solid #4361ee}
-  .co-logo{width:60px;height:60px;object-fit:contain;border-radius:8px;margin-bottom:6px}
-  .co-name{font-size:20px;font-weight:800}.co-det{font-size:11px;color:#6b7280;margin-top:2px}
-  .ch-title{text-align:right}.ch-title h1{font-size:24px;font-weight:800;color:#4361ee}.ch-title p{font-size:12px;color:#6b7280}
-  .info-grid{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:18px}
-  .info-box{padding:12px;background:#f8fafc;border-radius:8px}
-  .info-box h4{font-size:9px;text-transform:uppercase;letter-spacing:1px;color:#9ca3af;margin-bottom:5px}
-  .info-box p{font-size:12px;color:#374151;line-height:1.5}
-  table{width:100%;border-collapse:collapse;margin:14px 0}
-  th{background:#1e293b;color:#fff;padding:8px 10px;text-align:left;font-size:10px;text-transform:uppercase}
-  td{padding:9px 10px;border-bottom:1px solid #e5e7eb;font-size:12px;vertical-align:middle}
-  .art-name{font-weight:600}.sku{font-size:10px;color:#9ca3af;margin-top:2px}
-  .color-cell{display:flex;align-items:center;gap:6px}
-  .col-img{width:24px;height:24px;border-radius:4px;object-fit:cover;border:1px solid #e5e7eb}
-  .col-dot{display:inline-block;width:12px;height:12px;border-radius:50%;flex-shrink:0}
-  .sz{font-weight:600}.center{text-align:center}.right{text-align:right}.bold{font-weight:700}
-  .grand{background:#ecfdf5;font-weight:800;font-size:14px}
-  .notes{font-size:11px;color:#6b7280;margin-top:14px;padding:10px 14px;background:#fffbeb;border-radius:6px;border-left:3px solid #f59e0b}
-  .footer{margin-top:40px;padding-top:16px;border-top:1px solid #e5e7eb;display:flex;justify-content:space-between}
-  .sig .line{border-top:1px solid #374151;margin-top:60px;padding-top:6px;font-size:11px;color:#6b7280;text-align:center}
-  @media print{body{padding:16px}}
+  body{font-family:'Segoe UI',sans-serif;padding:18px 22px;color:#1a1a2e;font-size:11px}
+  .hdr{display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:10px;padding-bottom:10px;border-bottom:2.5px solid #4361ee}
+  .co-logo{width:48px;height:48px;object-fit:contain;border-radius:6px;margin-bottom:4px}
+  .co-name{font-size:16px;font-weight:800;line-height:1.2}
+  .co-det{font-size:10px;color:#6b7280;margin-top:1px}
+  .ch-title{text-align:right}
+  .ch-title h1{font-size:18px;font-weight:800;color:#4361ee;letter-spacing:-.3px}
+  .ch-title p{font-size:10px;color:#6b7280;margin-top:2px}
+  .info-grid{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:10px}
+  .info-box{padding:7px 10px;background:#f8fafc;border-radius:6px;border:1px solid #e5e7eb}
+  .info-box h4{font-size:8px;text-transform:uppercase;letter-spacing:1px;color:#9ca3af;margin-bottom:3px}
+  .info-box p{font-size:10px;color:#374151;line-height:1.4}
+  table{width:100%;border-collapse:collapse}
+  thead tr{background:#1e293b}
+  th{color:#fff;padding:5px 7px;text-align:left;font-size:9px;text-transform:uppercase;letter-spacing:.5px}
+  td{padding:5px 7px;border-bottom:1px solid #e5e7eb;font-size:10px;vertical-align:middle}
+  .sno{color:#9ca3af;width:22px}
+  .art-td{min-width:100px}
+  .art-name{font-weight:600;font-size:10px}
+  .sku{font-size:9px;color:#9ca3af;margin-top:1px}
+  .col-td{min-width:80px}
+  .color-cell{display:flex;align-items:center;gap:5px;font-size:10px}
+  .col-img{width:18px;height:18px;border-radius:3px;object-fit:cover;border:1px solid #e5e7eb;flex-shrink:0}
+  .col-dot{display:inline-block;width:9px;height:9px;border-radius:50%;flex-shrink:0}
+  .sizes-td{padding:3px 7px}
+  .sizes-wrap{display:flex;flex-wrap:wrap;gap:3px}
+  .sz-cell{display:inline-block;text-align:center;background:#eef1ff;border-radius:4px;padding:2px 6px;min-width:38px}
+  .sz-lbl{font-size:8px;font-weight:700;color:#4361ee}
+  .sz-qty{font-size:11px;font-weight:800;color:#1a1a2e;line-height:1.2}
+  .sz-rate{font-size:8px;color:#0d9f6e}
+  .qty-td{text-align:center;font-size:11px;width:36px}
+  .amt-td{text-align:right;font-size:10px;width:70px}
+  .bold{font-weight:700}
+  .grand td{background:#ecfdf5;font-weight:800;font-size:11px;border-top:2px solid #0d9f6e}
+  .notes{font-size:10px;color:#6b7280;margin-top:8px;padding:6px 10px;background:#fffbeb;border-radius:5px;border-left:3px solid #f59e0b}
+  .footer{margin-top:24px;padding-top:10px;border-top:1px solid #e5e7eb;display:flex;justify-content:space-between}
+  .sig .line{border-top:1px solid #374151;margin-top:44px;padding-top:5px;font-size:10px;color:#6b7280;text-align:center;min-width:160px}
+  @media print{
+    body{padding:10px 14px}
+    @page{margin:8mm}
+  }
 </style></head><body>
 <div class="hdr">
-  <div>${companyLogo?`<img src="${companyLogo}" class="co-logo"/>`:""}<div class="co-name">${co.name||"Your Company"}</div><div class="co-det">${co.address||""}</div><div class="co-det">${co.phone||""}${co.email?` | ${co.email}`:""}</div>${co.gstin?`<div class="co-det">GSTIN: ${co.gstin}</div>`:""}</div>
-  <div class="ch-title"><h1>DELIVERY CHALLAN</h1><p>${ch.number} | ${fmtD(ch.date)}</p></div>
+  <div>${companyLogo?`<img src="${companyLogo}" class="co-logo"/>`:""}
+    <div class="co-name">${co.name||"Your Company"}</div>
+    <div class="co-det">${co.address||""}</div>
+    <div class="co-det">${[co.phone,co.email].filter(Boolean).join(" | ")}</div>
+    ${co.gstin?`<div class="co-det">GSTIN: ${co.gstin}</div>`:""}
+  </div>
+  <div class="ch-title"><h1>DELIVERY CHALLAN</h1><p>${ch.number} &nbsp;|&nbsp; ${fmtD(ch.date)}</p></div>
 </div>
 <div class="info-grid">
-  <div class="info-box"><h4>Customer</h4><p><strong>${ch.customer.name}</strong></p><p>${ch.customer.address}</p><p>Phone: ${ch.customer.phone}</p>${ch.customer.gst?`<p>GST: ${ch.customer.gst}</p>`:""}</div>
-  <div class="info-box"><h4>Transport Details</h4><p>Transport: ${ch.customer.transport||"—"}</p><p>LR Number: ${ch.lrNumber||"—"}</p></div>
+  <div class="info-box"><h4>Bill To</h4>
+    <p><strong>${ch.customer.name}</strong></p>
+    <p>${ch.customer.address}</p>
+    <p>Ph: ${ch.customer.phone}${ch.customer.gst?` &nbsp;|&nbsp; GST: ${ch.customer.gst}`:""}</p>
+  </div>
+  <div class="info-box"><h4>Dispatch Info</h4>
+    <p>Transport: <strong>${ch.customer.transport||"—"}</strong></p>
+    <p>LR No: <strong>${ch.lrNumber||"—"}</strong></p>
+  </div>
 </div>
 <table>
-  <thead><tr><th>Article</th><th>Color</th><th>Size</th><th class="center">Qty</th><th class="right">Rate</th><th class="right">Amount</th></tr></thead>
+  <thead><tr>
+    <th>#</th><th>Article</th><th>Color</th><th>Sizes (Qty @ Rate)</th>
+    <th style="text-align:center">Pcs</th><th style="text-align:right">Amount</th>
+  </tr></thead>
   <tbody>${rows}
-  <tr class="grand"><td colspan="3" class="right">Grand Total</td><td class="center bold">${ch.totalQty} pcs</td><td></td><td class="right">${fmtR(ch.totalAmt)}</td></tr>
+  <tr class="grand">
+    <td colspan="4" style="text-align:right;font-size:11px">Grand Total</td>
+    <td style="text-align:center">${ch.totalQty} pcs</td>
+    <td style="text-align:right">${rupee(ch.totalAmt)}</td>
+  </tr>
   </tbody>
 </table>
 ${ch.remarks?`<div class="notes"><strong>Remarks:</strong> ${ch.remarks}</div>`:""}
-<div class="footer"><div class="sig"><div class="line">Receiver's Signature</div></div><div class="sig"><div class="line">Authorized Signature</div></div></div>
+<div class="footer">
+  <div class="sig"><div class="line">Receiver's Signature</div></div>
+  <div class="sig"><div class="line">Authorized Signature</div></div>
+</div>
 </body></html>`;
   };
 
@@ -2077,21 +2132,26 @@ GUIDELINES:
                   {art && <Sel label="Color" options={art.colors.map((c,ci) => ({v:String(ci), l:c.name}))} placeholder="Select color..." value={it.colorIdx} onChange={e => updChItem(ii,"colorIdx",e.target.value)}/>}
                 </div>
 
-                {/* Size qty inputs */}
+                {/* Size qty + price inputs */}
                 {col && availSizes.length > 0 && (
                   <div>
-                    <div style={{fontSize:10,fontWeight:700,color:S.txt3,textTransform:"uppercase",marginBottom:8}}>Qty per size</div>
+                    <div style={{fontSize:10,fontWeight:700,color:S.txt3,textTransform:"uppercase",marginBottom:8}}>Qty & Rate per size</div>
                     <div style={{display:"flex",gap:8,flexWrap:"wrap"}}>
                       {availSizes.map(sz => {
                         const avail = col.sizes[sz]?.qty || 0;
-                        const price = col.sizes[sz]?.price || 0;
+                        const defaultPrice = col.sizes[sz]?.price || 0;
+                        const customPrice = it.prices?.[sz];
+                        const price = customPrice !== undefined ? customPrice : defaultPrice;
                         const qty = it.sizes[sz] || 0;
                         return (
-                          <div key={sz} style={{background:S.card,borderRadius:10,border:`1.5px solid ${qty > 0 ? S.acc : S.bdr}`,padding:"8px 10px",textAlign:"center",minWidth:68,transition:"border-color .15s"}}>
+                          <div key={sz} style={{background:S.card,borderRadius:10,border:`1.5px solid ${qty > 0 ? S.acc : S.bdr}`,padding:"8px 10px",textAlign:"center",minWidth:78,transition:"border-color .15s"}}>
                             <div style={{fontSize:11,fontWeight:700,color:qty>0?S.acc:S.txt2}}>{sz}</div>
                             <input type="number" min="0" max={avail} placeholder="0" value={it.sizes[sz] || ""} onChange={e => updChQty(ii,sz,Math.min(Number(e.target.value)||0,avail))} style={{width:"100%",textAlign:"center",background:"transparent",border:"none",outline:"none",color:S.txt,fontFamily:S.fm,fontSize:16,fontWeight:700,padding:"4px 0"}}/>
-                            <div style={{fontSize:9,color:S.txt3}}>/ {avail}</div>
-                            {price > 0 && <div style={{fontSize:10,color:S.grn,fontFamily:S.fm,marginTop:2}}>{fmtS(price)}</div>}
+                            <div style={{fontSize:9,color:S.txt3,marginBottom:4}}>/ {avail} pcs</div>
+                            <div style={{borderTop:`1px dashed ${S.bdr}`,paddingTop:4,display:"flex",alignItems:"center",gap:2}}>
+                              <span style={{fontSize:9,color:S.txt3}}>₹</span>
+                              <input type="number" min="0" placeholder={defaultPrice||"Rate"} value={customPrice !== undefined ? customPrice : (defaultPrice || "")} onChange={e => updChPrice(ii,sz,e.target.value)} style={{width:"100%",textAlign:"center",background:"transparent",border:"none",outline:"none",color:S.grn,fontFamily:S.fm,fontSize:11,fontWeight:700,padding:0}}/>
+                            </div>
                           </div>
                         );
                       })}
