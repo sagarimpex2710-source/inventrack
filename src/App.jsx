@@ -1045,9 +1045,9 @@ export default function App() {
   .art-td{min-width:100px}
   .art-name{font-weight:600;font-size:10px}
   .sku{font-size:9px;color:#9ca3af;margin-top:1px}
-  .col-td{min-width:80px}
-  .color-cell{display:flex;align-items:center;gap:5px;font-size:10px}
-  .col-img{width:40px;height:40px;border-radius:5px;object-fit:cover;border:1px solid #e5e7eb;flex-shrink:0}
+  .col-td{min-width:100px;vertical-align:middle}
+  .color-cell{display:flex;flex-direction:column;align-items:center;gap:5px;font-size:10px;text-align:center}
+  .col-img{width:72px;height:72px;border-radius:8px;object-fit:cover;border:1px solid #e5e7eb;flex-shrink:0;display:block}
   .col-dot{display:inline-block;width:9px;height:9px;border-radius:50%;flex-shrink:0}
   .sizes-td{padding:3px 7px}
   .sizes-wrap{display:flex;flex-wrap:wrap;gap:3px}
