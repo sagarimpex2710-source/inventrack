@@ -55,36 +55,77 @@ const S = {
   f:"'DM Sans',system-ui,sans-serif", fm:"'JetBrains Mono',monospace"
 };
 
-/* ── Image Compression ── */
-const compressImage = (file, maxPx = 500, quality = 0.6) => new Promise((res, rej) => {
-  if (!file || !file.type.startsWith("image/")) { rej(new Error("Not an image")); return; }
-  const reader = new FileReader();
-  reader.onerror = () => rej(new Error("Read failed"));
-  reader.onload = ev => {
-    const img = new Image();
-    img.onerror = () => rej(new Error("Image load failed"));
-    img.onload = () => {
-      try {
-        const ratio = Math.min(maxPx / img.width, maxPx / img.height, 1);
-        const w = Math.max(1, Math.round(img.width * ratio));
-        const h = Math.max(1, Math.round(img.height * ratio));
-        const canvas = document.createElement("canvas");
-        canvas.width = w; canvas.height = h;
-        const ctx = canvas.getContext("2d");
-        ctx.imageSmoothingEnabled = true;
-        ctx.imageSmoothingQuality = "high";
-        ctx.drawImage(img, 0, 0, w, h);
-        // Try WebP first (smaller), fallback to JPEG
-        const out = canvas.toDataURL("image/webp", quality);
-        res(out.startsWith("data:image/webp") ? out : canvas.toDataURL("image/jpeg", quality));
-      } catch(e) { rej(e); }
+/* ── Supabase Storage Upload ── */
+const uploadToStorage = async (file, folder = "general") => {
+  // Compress first
+  const compressed = await new Promise((res, rej) => {
+    if (!file || !file.type.startsWith("image/")) { rej(new Error("Not an image")); return; }
+    const reader = new FileReader();
+    reader.onerror = () => rej(new Error("Read failed"));
+    reader.onload = ev => {
+      const img = new Image();
+      img.onerror = () => rej(new Error("Load failed"));
+      img.onload = () => {
+        try {
+          const maxPx = 800;
+          const ratio = Math.min(maxPx / img.width, maxPx / img.height, 1);
+          const w = Math.max(1, Math.round(img.width * ratio));
+          const h = Math.max(1, Math.round(img.height * ratio));
+          const canvas = document.createElement("canvas");
+          canvas.width = w; canvas.height = h;
+          canvas.getContext("2d").drawImage(img, 0, 0, w, h);
+          canvas.toBlob(blob => blob ? res(blob) : rej(new Error("Blob failed")), "image/webp", 0.75);
+        } catch(e) { rej(e); }
+      };
+      img.src = ev.target.result;
     };
-    img.src = ev.target.result;
-  };
-  reader.readAsDataURL(file);
-});
+    reader.readAsDataURL(file);
+  });
 
-/* ── Reusable Components ── */
+  // Upload blob to Supabase Storage
+  const filename = `${folder}/${Date.now()}-${Math.random().toString(36).slice(2)}.webp`;
+  const storageH = { "apikey": SUPA_KEY, "Authorization": `Bearer ${SUPA_KEY}`, "Content-Type": "image/webp", "x-upsert": "true" };
+  const r = await fetch(`${SUPA_URL}/storage/v1/object/images/${filename}`, { method: "POST", headers: storageH, body: compressed });
+  if (!r.ok) throw new Error("Storage upload failed");
+  return `${SUPA_URL}/storage/v1/object/public/images/${filename}`;
+};
+
+const isStorageUrl = v => typeof v === "string" && v.startsWith("http");
+
+/* ── Image Upload Component ── */
+const ImgUp = ({value, onChange, sz=80, folder="general"}) => {
+  const ref = useRef();
+  const [uploading, setUploading] = useState(false);
+  const [err, setErr] = useState("");
+  const handle = async e => {
+    const f = e.target.files[0];
+    if (!f) return;
+    if (f.size > 15 * 1024 * 1024) { setErr("Max 15MB"); setTimeout(() => setErr(""), 3000); return; }
+    setUploading(true); setErr("");
+    try {
+      const url = await uploadToStorage(f, folder);
+      onChange(url);
+    } catch(ex) {
+      console.error("Upload error:", ex);
+      setErr("Upload failed"); setTimeout(() => setErr(""), 3000);
+    }
+    finally { setUploading(false); e.target.value = ""; }
+  };
+  return (
+    <div style={{position:"relative", display:"inline-block"}}>
+      <div onClick={() => !uploading && ref.current?.click()} style={{width:sz, height:sz, borderRadius:10, border:`2px dashed ${err ? S.red : value ? S.acc : S.bdr}`, background:value?"transparent":S.bg, display:"flex", alignItems:"center", justifyContent:"center", cursor:uploading?"wait":"pointer", overflow:"hidden", flexShrink:0}}>
+        {uploading
+          ? <div style={{textAlign:"center",color:S.acc}}><RefreshCw size={18} style={{animation:"spin 1s linear infinite"}}/><div style={{fontSize:9,marginTop:4}}>Uploading…</div></div>
+          : value
+            ? <img src={value} alt="" style={{width:"100%",height:"100%",objectFit:"cover"}}/>
+            : <div style={{textAlign:"center",color:err?S.red:S.txt3}}><Camera size={20}/><div style={{fontSize:9,marginTop:2}}>{err||"Upload"}</div></div>
+        }
+      </div>
+      <input ref={ref} type="file" accept="image/*" onChange={handle} style={{display:"none"}}/>
+      {value && !uploading && <button onClick={e => {e.stopPropagation(); onChange(null);}} style={{position:"absolute",top:-6,right:-6,width:20,height:20,borderRadius:"50%",background:S.red,border:"2px solid #fff",display:"flex",alignItems:"center",justifyContent:"center",cursor:"pointer",padding:0}}><X size={10} color="#fff"/></button>}
+    </div>
+  );
+};
 const Btn = ({children,v="primary",sz="md",onClick,disabled,icon,style:st}) => {
   const vs = {primary:{bg:S.acc,c:"#fff"},secondary:{bg:S.card,c:S.txt2,bd:`1px solid ${S.bdr}`},danger:{bg:S.redL,c:S.red},ghost:{bg:"transparent",c:S.txt2},success:{bg:S.grn,c:"#fff"}}[v];
   const ss = {sm:{p:"5px 10px",f:11},md:{p:"8px 16px",f:12},lg:{p:"10px 20px",f:13}}[sz];
@@ -1882,7 +1923,7 @@ GUIDELINES:
                     <div style={{color:S.txt3,fontSize:12}}>No banner — categories show with a plain heading divider</div>
                   )}
                 </div>
-                <ImgUp value={catBanners[cat]||null} onChange={v=>setCatBannersDB({...catBanners,[cat]:v})} sz={64}/>
+                <ImgUp value={catBanners[cat]||null} onChange={v=>setCatBannersDB({...catBanners,[cat]:v})} sz={64} folder="banners"/>
               </div>
             </div>
           ))}
@@ -1979,7 +2020,7 @@ GUIDELINES:
           {af.colors.map((c,ci) => (
             <div key={ci} style={{background:S.bg,borderRadius:10,border:`1px solid ${S.bdr}`,padding:12,marginBottom:10}}>
               <div style={{display:"flex",alignItems:"flex-start",gap:10,marginBottom:10,flexWrap:"wrap"}}>
-                <ImgUp value={c.image} onChange={img => setColImg(ci, img)} sz={64}/>
+                <ImgUp value={c.image} onChange={img => setColImg(ci, img)} sz={64} folder="colors"/>
                 <div style={{flex:1,display:"flex",justifyContent:"space-between",alignItems:"center"}}>
                   <ColorDot name={c.name}/>
                   <button onClick={() => rmColor(ci)} style={{background:S.redL,border:"none",borderRadius:6,padding:4,cursor:"pointer",display:"flex",color:S.red}}><Trash2 size={13}/></button>
@@ -2066,7 +2107,7 @@ GUIDELINES:
 
       {/* Company Settings Modal */}
       <Modal open={showCompany} onClose={() => { setCoDB(co); setLogoDb(companyLogo); setShowCompany(false); }} title="Company Settings" sub="Logo & details for challan PDF" w={480}>
-        <div style={{display:"flex",justifyContent:"center",marginBottom:14}}><ImgUp value={companyLogo} onChange={v => setCompanyLogo(v)} sz={90}/></div>
+        <div style={{display:"flex",justifyContent:"center",marginBottom:14}}><ImgUp value={companyLogo} onChange={v => setCompanyLogo(v)} sz={90} folder="logos"/></div>
         <div className="form-grid2" style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12}}>
           <Inp label="Company Name" value={co.name} onChange={e => setCo({...co, name:e.target.value})} placeholder="Your Company" cStyle={{gridColumn:"1/-1"}}/>
           <Inp label="Address" value={co.address} onChange={e => setCo({...co, address:e.target.value})} placeholder="Address" cStyle={{gridColumn:"1/-1"}}/>
