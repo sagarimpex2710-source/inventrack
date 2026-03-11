@@ -944,15 +944,17 @@ export default function App() {
   };
   const updChQty = (i, sz, val) => { const items = [...chf.items]; items[i] = {...items[i], sizes:{...items[i].sizes,[sz]:Math.max(0,Number(val)||0)}}; setChf({...chf, items}); };
   const updChPrice = (i, sz, val) => { const items = [...chf.items]; items[i] = {...items[i], prices:{...items[i].prices,[sz]:Math.max(0,Number(val)||0)}}; setChf({...chf, items}); };
-  const getChArt = it => articles.find(a => a.id === it.articleId);
+  const chArts = editChArts || articles; // use restored arts during edit
+  const getChArt = it => chArts.find(a => a.id === it.articleId);
   const getChCol = it => { const a = getChArt(it); return a?.colors[Number(it.colorIdx)]; };
   const chTotQty = chf.items.reduce((s,it) => s + Object.values(it.sizes).reduce((ss,q) => ss + q, 0), 0);
   const chTotAmt = chf.items.reduce((s,it) => { const col = getChCol(it); if (!col) return s; return s + Object.entries(it.sizes).reduce((ss,[sz,q]) => { const p = (it.prices?.[sz] !== undefined && it.prices[sz] !== "") ? Number(it.prices[sz]) : (col.sizes[sz]?.price || 0); return ss + q * p; }, 0); }, 0);
 
   const openNewChallan = () => { setEditCh(null); setChf({...blankCh}); setShowChModal(true); };
 
+  const [editChArts, setEditChArts] = useState(null); // restored articles during edit
+
   const openEditChallan = ch => {
-    // Re-add old stock back to articles before editing
     const restoredArts = articles.map(a => {
       const copy = JSON.parse(JSON.stringify(a));
       ch.items.forEach(it => {
@@ -964,7 +966,7 @@ export default function App() {
       });
       return copy;
     });
-    setArticlesDB(restoredArts);
+    setEditChArts(restoredArts); // keep restored arts separate — don't save to DB yet
     setEditCh(ch);
     setChf({
       customerId: ch.customerId || "",
@@ -1007,8 +1009,9 @@ export default function App() {
       customer:{name:cust.name,phone:cust.phone,address:`${cust.address||""}, ${cust.city||""}, ${cust.state||""} - ${cust.pincode||""}`.replace(/^,\s*/,""),gst:cust.gst,transport:cust.transport},
       lrNumber:chf.lrNumber, remarks:chf.remarks, items:challanItems, totalQty:tQty, totalAmt:tAmt
     };
-    // Deduct stock + save both articles and challans together
-    const updArts = articles.map(a => {
+    // Deduct stock from restored arts (edit) or current arts (new)
+    const baseArts = editChArts || articles;
+    const updArts = baseArts.map(a => {
       const copy = JSON.parse(JSON.stringify(a));
       valid.filter(it => it.articleId === a.id).forEach(it => {
         const ci = Number(it.colorIdx);
@@ -1019,6 +1022,7 @@ export default function App() {
     const updChallans = editCh ? challans.map(c => c.id === editCh.id ? challan : c) : [challan, ...challans];
     setArticlesDB(updArts);
     setChallansDB(updChallans);
+    setEditChArts(null); // clear temp restored arts
     setShowChModal(false);
     setChf({...blankCh});
     setEditCh(null);
@@ -2173,7 +2177,7 @@ GUIDELINES:
 
                 {/* Article + Color selects */}
                 <div className="form-grid2" style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10,marginBottom:col && availSizes.length > 0 ? 12 : 0}}>
-                  <SearchSel label="Article" options={articles.filter(a => artTot(a) > 0).map(a => ({v:a.id, l:`${a.name} (${a.skuId})`}))} placeholder="Search article..." value={it.articleId} onChange={v => updChItem(ii,"articleId",v)}/>
+                  <SearchSel label="Article" options={chArts.filter(a => editCh ? true : artTot(a) > 0).map(a => ({v:a.id, l:`${a.name} (${a.skuId})`}))} placeholder="Search article..." value={it.articleId} onChange={v => updChItem(ii,"articleId",v)}/>
                   {art && <Sel label="Color" options={art.colors.map((c,ci) => ({v:String(ci), l:c.name}))} placeholder="Select color..." value={it.colorIdx} onChange={e => updChItem(ii,"colorIdx",e.target.value)}/>}
                 </div>
 
@@ -2219,7 +2223,7 @@ GUIDELINES:
         )}
 
         <div style={{display:"flex",justifyContent:"flex-end",gap:8,marginTop:16,paddingTop:14,borderTop:`1px solid ${S.bdr}`}}>
-          <Btn v="secondary" onClick={() => { setShowChModal(false); setEditCh(null); setChf({...blankCh}); }}>Cancel</Btn>
+          <Btn v="secondary" onClick={() => { setShowChModal(false); setEditCh(null); setChf({...blankCh}); setEditChArts(null); }}>Cancel</Btn>
           <Btn onClick={saveChallan} disabled={!chf.customerId || chf.items.length === 0 || chTotQty === 0} icon={<Check size={14}/>}>
             {editCh ? "Update Challan" : "Create & Deduct Stock"}
           </Btn>
