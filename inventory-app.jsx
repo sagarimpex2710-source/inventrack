@@ -1,5 +1,38 @@
-import { useState, useRef } from "react";
-import { Package, Users, FileText, Plus, Trash2, Edit3, Search, X, Check, ChevronRight, Settings, Camera, Palette, AlertTriangle, Eye, ShoppingBag, Phone, Mail, Calendar, MapPin, Building, Share2, Copy, Cake, Grid3X3, Truck, Printer } from "lucide-react";
+import { useState, useRef, useEffect } from "react";
+import { Package, Users, FileText, Plus, Trash2, Edit3, Search, X, Check, ChevronRight, Settings, Camera, Palette, AlertTriangle, ShoppingBag, Phone, Mail, Calendar, MapPin, Building, Cake, Grid3X3, Truck, Printer, Download, ChevronDown, MessageCircle, Send, Bot, Sparkles, Lock, ShoppingCart, ExternalLink, ClipboardList, CheckCircle, Clock, XCircle, KeyRound, DatabaseBackup, Upload, RotateCcw, Share2, PhoneCall, ImageIcon, ChevronLeft, ChevronUp, History, MessageSquare, Star, Wifi, WifiOff, RefreshCw } from "lucide-react";
+import { createClient } from "@supabase/supabase-js";
+
+/* ── Supabase Client ── */
+const SUPA_URL = "https://godcyrhyplwocwkuoqqx.supabase.co";
+const SUPA_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImdvZGN5cmh5cGx3b2N3a3VvcXF4Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzIyMTEzNDIsImV4cCI6MjA4Nzc4NzM0Mn0.el44jSooM2nA8eH29MyZXA6FdIjgYIslNEX29BQpgYE";
+const supabase = createClient(SUPA_URL, SUPA_KEY);
+
+const H = { "Content-Type": "application/json", "apikey": SUPA_KEY, "Authorization": `Bearer ${SUPA_KEY}`, "Prefer": "resolution=merge-duplicates" };
+
+const db = {
+  from: (table) => ({
+    select: async (cols="*") => {
+      const r = await fetch(`${SUPA_URL}/rest/v1/${table}?select=${cols}`, { headers: H });
+      return r.ok ? { data: await r.json(), error: null } : { data: null, error: await r.json() };
+    },
+    selectOrdered: async (col, asc=false) => {
+      const r = await fetch(`${SUPA_URL}/rest/v1/${table}?select=*&order=${col}.${asc?"asc":"desc"}`, { headers: H });
+      return r.ok ? { data: await r.json(), error: null } : { data: null, error: await r.json() };
+    },
+    upsert: async (row) => {
+      const r = await fetch(`${SUPA_URL}/rest/v1/${table}`, { method: "POST", headers: H, body: JSON.stringify(row) });
+      return r.ok ? { error: null } : { error: await r.json() };
+    },
+    delete: async (col, val) => {
+      const r = await fetch(`${SUPA_URL}/rest/v1/${table}?${col}=eq.${val}`, { method: "DELETE", headers: H });
+      return r.ok ? { error: null } : { error: await r.json() };
+    },
+    deleteAll: async () => {
+      const r = await fetch(`${SUPA_URL}/rest/v1/${table}?id=neq.___`, { method: "DELETE", headers: H });
+      return r.ok ? { error: null } : { error: await r.json() };
+    },
+  })
+};
 
 const uid = () => Math.random().toString(36).substr(2, 9);
 const SIZES = ["S","M","L","XL","XXL","3XL","4XL","5XL","6XL","7XL"];
@@ -22,7 +55,77 @@ const S = {
   f:"'DM Sans',system-ui,sans-serif", fm:"'JetBrains Mono',monospace"
 };
 
-/* ── Reusable Components ── */
+/* ── Supabase Storage Upload ── */
+const uploadToStorage = async (file, folder = "general") => {
+  // Compress first
+  const compressed = await new Promise((res, rej) => {
+    if (!file || !file.type.startsWith("image/")) { rej(new Error("Not an image")); return; }
+    const reader = new FileReader();
+    reader.onerror = () => rej(new Error("Read failed"));
+    reader.onload = ev => {
+      const img = new Image();
+      img.onerror = () => rej(new Error("Load failed"));
+      img.onload = () => {
+        try {
+          const maxPx = 800;
+          const ratio = Math.min(maxPx / img.width, maxPx / img.height, 1);
+          const w = Math.max(1, Math.round(img.width * ratio));
+          const h = Math.max(1, Math.round(img.height * ratio));
+          const canvas = document.createElement("canvas");
+          canvas.width = w; canvas.height = h;
+          canvas.getContext("2d").drawImage(img, 0, 0, w, h);
+          canvas.toBlob(blob => blob ? res(blob) : rej(new Error("Blob failed")), "image/webp", 0.75);
+        } catch(e) { rej(e); }
+      };
+      img.src = ev.target.result;
+    };
+    reader.readAsDataURL(file);
+  });
+
+  // Upload blob to Supabase Storage
+  const filename = `${folder}/${Date.now()}-${Math.random().toString(36).slice(2)}.webp`;
+  const storageH = { "apikey": SUPA_KEY, "Authorization": `Bearer ${SUPA_KEY}`, "Content-Type": "image/webp", "x-upsert": "true" };
+  const r = await fetch(`${SUPA_URL}/storage/v1/object/images/${filename}`, { method: "POST", headers: storageH, body: compressed });
+  if (!r.ok) throw new Error("Storage upload failed");
+  return `${SUPA_URL}/storage/v1/object/public/images/${filename}`;
+};
+
+const isStorageUrl = v => typeof v === "string" && v.startsWith("http");
+
+/* ── Image Upload Component ── */
+const ImgUp = ({value, onChange, sz=80, folder="general"}) => {
+  const ref = useRef();
+  const [uploading, setUploading] = useState(false);
+  const [err, setErr] = useState("");
+  const handle = async e => {
+    const f = e.target.files[0];
+    if (!f) return;
+    if (f.size > 15 * 1024 * 1024) { setErr("Max 15MB"); setTimeout(() => setErr(""), 3000); return; }
+    setUploading(true); setErr("");
+    try {
+      const url = await uploadToStorage(f, folder);
+      onChange(url);
+    } catch(ex) {
+      console.error("Upload error:", ex);
+      setErr("Upload failed"); setTimeout(() => setErr(""), 3000);
+    }
+    finally { setUploading(false); e.target.value = ""; }
+  };
+  return (
+    <div style={{position:"relative", display:"inline-block"}}>
+      <div onClick={() => !uploading && ref.current?.click()} style={{width:sz, height:sz, borderRadius:10, border:`2px dashed ${err ? S.red : value ? S.acc : S.bdr}`, background:value?"transparent":S.bg, display:"flex", alignItems:"center", justifyContent:"center", cursor:uploading?"wait":"pointer", overflow:"hidden", flexShrink:0}}>
+        {uploading
+          ? <div style={{textAlign:"center",color:S.acc}}><RefreshCw size={18} style={{animation:"spin 1s linear infinite"}}/><div style={{fontSize:9,marginTop:4}}>Uploading…</div></div>
+          : value
+            ? <img src={value} alt="" style={{width:"100%",height:"100%",objectFit:"cover"}}/>
+            : <div style={{textAlign:"center",color:err?S.red:S.txt3}}><Camera size={20}/><div style={{fontSize:9,marginTop:2}}>{err||"Upload"}</div></div>
+        }
+      </div>
+      <input ref={ref} type="file" accept="image/*" onChange={handle} style={{display:"none"}}/>
+      {value && !uploading && <button onClick={e => {e.stopPropagation(); onChange(null);}} style={{position:"absolute",top:-6,right:-6,width:20,height:20,borderRadius:"50%",background:S.red,border:"2px solid #fff",display:"flex",alignItems:"center",justifyContent:"center",cursor:"pointer",padding:0}}><X size={10} color="#fff"/></button>}
+    </div>
+  );
+};
 const Btn = ({children,v="primary",sz="md",onClick,disabled,icon,style:st}) => {
   const vs = {primary:{bg:S.acc,c:"#fff"},secondary:{bg:S.card,c:S.txt2,bd:`1px solid ${S.bdr}`},danger:{bg:S.redL,c:S.red},ghost:{bg:"transparent",c:S.txt2},success:{bg:S.grn,c:"#fff"}}[v];
   const ss = {sm:{p:"5px 10px",f:11},md:{p:"8px 16px",f:12},lg:{p:"10px 20px",f:13}}[sz];
@@ -51,16 +154,82 @@ const Sel = ({label,options,placeholder,...p}) => (
 
 const Tag = ({children,color=S.acc}) => <span style={{display:"inline-flex",padding:"2px 9px",borderRadius:14,fontSize:10,fontWeight:700,color,background:`${color}15`}}>{children}</span>;
 
+/* ── Searchable Select ── */
+const SearchSel = ({label, options, value, onChange, placeholder="Search..."}) => {
+  const [query, setQuery] = useState("");
+  const [open, setOpen] = useState(false);
+  const ref = useRef();
+  const selected = options.find(o => o.v === value);
+  const filtered = options.filter(o => o.l.toLowerCase().includes(query.toLowerCase()));
+
+  // Close on outside click
+  useState(() => {
+    const handler = e => { if (ref.current && !ref.current.contains(e.target)) setOpen(false); };
+    document.addEventListener("mousedown", handler);
+    return () => document.removeEventListener("mousedown", handler);
+  });
+
+  return (
+    <div ref={ref} style={{display:"flex",flexDirection:"column",gap:3,position:"relative"}}>
+      {label && <label style={{fontSize:10,fontWeight:700,color:S.txt3,letterSpacing:.8,textTransform:"uppercase",fontFamily:S.f}}>{label}</label>}
+      <div
+        onClick={() => { setOpen(o => !o); setQuery(""); }}
+        style={{display:"flex",alignItems:"center",background:S.bg,border:`1px solid ${open ? S.acc : S.bdr}`,borderRadius:8,padding:"0 10px",cursor:"pointer",minHeight:38,transition:"border-color .15s"}}
+      >
+        {selected
+          ? <span style={{flex:1,fontSize:13,color:S.txt,fontFamily:S.f,padding:"9px 0",lineHeight:1}}>{selected.l}</span>
+          : <span style={{flex:1,fontSize:13,color:S.txt3,fontFamily:S.f,padding:"9px 0"}}>{placeholder}</span>
+        }
+        {selected
+          ? <button onClick={e => { e.stopPropagation(); onChange(""); setOpen(false); }} style={{background:"none",border:"none",padding:2,cursor:"pointer",display:"flex",color:S.txt3}}><X size={13}/></button>
+          : <ChevronDown size={13} style={{color:S.txt3,transform:open?"rotate(180deg)":"none",transition:"transform .15s"}}/>
+        }
+      </div>
+      {open && (
+        <div style={{position:"absolute",top:"100%",left:0,right:0,zIndex:200,background:S.card,border:`1px solid ${S.bdrD}`,borderRadius:10,boxShadow:"0 8px 24px rgba(0,0,0,.12)",marginTop:4,overflow:"hidden"}}>
+          <div style={{padding:"8px 10px",borderBottom:`1px solid ${S.bdr}`,display:"flex",alignItems:"center",gap:6,background:S.bg}}>
+            <Search size={13} style={{color:S.txt3,flexShrink:0}}/>
+            <input
+              autoFocus
+              value={query}
+              onChange={e => setQuery(e.target.value)}
+              placeholder="Type to search..."
+              style={{flex:1,border:"none",outline:"none",background:"transparent",fontSize:13,color:S.txt,fontFamily:S.f}}
+            />
+            {query && <button onClick={() => setQuery("")} style={{background:"none",border:"none",padding:0,cursor:"pointer",display:"flex",color:S.txt3}}><X size={12}/></button>}
+          </div>
+          <div style={{maxHeight:200,overflowY:"auto"}}>
+            {filtered.length === 0
+              ? <div style={{padding:"14px 12px",fontSize:12,color:S.txt3,textAlign:"center"}}>No results found</div>
+              : filtered.map(o => (
+                  <div
+                    key={o.v}
+                    onClick={() => { onChange(o.v); setOpen(false); setQuery(""); }}
+                    style={{padding:"10px 12px",fontSize:13,cursor:"pointer",background:o.v === value ? S.accL : "transparent",color:o.v === value ? S.acc : S.txt,fontWeight:o.v === value ? 600 : 400,fontFamily:S.f,borderBottom:`1px solid ${S.bdr}`,transition:"background .1s"}}
+                    onMouseEnter={e => { if (o.v !== value) e.currentTarget.style.background = S.bg; }}
+                    onMouseLeave={e => { if (o.v !== value) e.currentTarget.style.background = "transparent"; }}
+                  >
+                    {o.l}
+                  </div>
+                ))
+            }
+          </div>
+        </div>
+      )}
+    </div>
+  );
+};
+
 const Modal = ({open,onClose,title,sub,children,w=640}) => {
   if (!open) return null;
   return (
-    <div style={{position:"fixed",inset:0,zIndex:1000,display:"flex",alignItems:"flex-start",justifyContent:"center",background:"rgba(0,0,0,.35)",backdropFilter:"blur(4px)",paddingTop:30,overflowY:"auto"}} onClick={onClose}>
-      <div onClick={e=>e.stopPropagation()} style={{background:S.card,borderRadius:16,border:`1px solid ${S.bdr}`,width:"96%",maxWidth:w,boxShadow:"0 20px 60px rgba(0,0,0,.12)",marginBottom:40}}>
-        <div style={{padding:"16px 20px",borderBottom:`1px solid ${S.bdr}`,display:"flex",alignItems:"center",justifyContent:"space-between",position:"sticky",top:0,background:S.card,borderRadius:"16px 16px 0 0",zIndex:1}}>
+    <div style={{position:"fixed",inset:0,zIndex:1000,display:"flex",alignItems:"flex-start",justifyContent:"center",background:"rgba(0,0,0,.4)",backdropFilter:"blur(4px)",paddingTop:16,overflowY:"auto",WebkitOverflowScrolling:"touch"}} onClick={onClose}>
+      <div onClick={e=>e.stopPropagation()} style={{background:S.card,borderRadius:16,border:`1px solid ${S.bdr}`,width:"calc(100% - 16px)",maxWidth:w,boxShadow:"0 20px 60px rgba(0,0,0,.15)",marginBottom:40}}>
+        <div style={{padding:"14px 16px",borderBottom:`1px solid ${S.bdr}`,display:"flex",alignItems:"center",justifyContent:"space-between",position:"sticky",top:0,background:S.card,borderRadius:"16px 16px 0 0",zIndex:1}}>
           <div><h3 style={{margin:0,fontSize:15,fontWeight:700}}>{title}</h3>{sub && <p style={{margin:"2px 0 0",fontSize:11,color:S.txt2}}>{sub}</p>}</div>
           <button onClick={onClose} style={{background:S.bg,border:"none",borderRadius:8,padding:6,cursor:"pointer",display:"flex",color:S.txt2}}><X size={16}/></button>
         </div>
-        <div style={{padding:"18px 20px"}}>{children}</div>
+        <div style={{padding:"16px"}}>{children}</div>
       </div>
     </div>
   );
@@ -75,15 +244,34 @@ const ColorDot = ({name}) => {
   return <div style={{display:"inline-flex",alignItems:"center",gap:6,padding:"3px 10px 3px 3px",background:`hsl(${h},55%,95%)`,borderRadius:16,border:`1px solid hsl(${h},45%,85%)`}}><div style={{width:16,height:16,borderRadius:"50%",background:`hsl(${h},55%,55%)`,border:`2px solid hsl(${h},45%,85%)`}}/><span style={{fontSize:11,fontWeight:600,color:`hsl(${h},50%,35%)`}}>{name}</span></div>;
 };
 
-const ImgUp = ({value,onChange,sz=80}) => {
+/* ── Image Upload with Compression ── */
+const ImgUp = ({value, onChange, sz=80}) => {
   const ref = useRef();
+  const [uploading, setUploading] = useState(false);
+  const [err, setErr] = useState("");
+  const handle = async e => {
+    const f = e.target.files[0];
+    if (!f) return;
+    if (f.size > 10 * 1024 * 1024) { setErr("Max 10MB"); setTimeout(() => setErr(""), 3000); return; }
+    setUploading(true); setErr("");
+    try {
+      const compressed = await compressImage(f, 500, 0.6);
+      onChange(compressed);
+    } catch { setErr("Upload failed"); setTimeout(() => setErr(""), 3000); }
+    finally { setUploading(false); e.target.value = ""; }
+  };
   return (
-    <div style={{position:"relative"}}>
-      <div onClick={()=>ref.current?.click()} style={{width:sz,height:sz,borderRadius:10,border:`2px dashed ${value?S.acc:S.bdr}`,background:value?"transparent":S.bg,display:"flex",alignItems:"center",justifyContent:"center",cursor:"pointer",overflow:"hidden",flexShrink:0}}>
-        {value ? <img src={value} alt="" style={{width:"100%",height:"100%",objectFit:"cover"}}/> : <div style={{textAlign:"center",color:S.txt3}}><Camera size={20}/><div style={{fontSize:9,marginTop:2}}>Upload</div></div>}
+    <div style={{position:"relative", display:"inline-block"}}>
+      <div onClick={() => !uploading && ref.current?.click()} style={{width:sz, height:sz, borderRadius:10, border:`2px dashed ${err ? S.red : value ? S.acc : S.bdr}`, background:value?"transparent":S.bg, display:"flex", alignItems:"center", justifyContent:"center", cursor:uploading?"wait":"pointer", overflow:"hidden", flexShrink:0}}>
+        {uploading
+          ? <div style={{textAlign:"center",color:S.acc}}><div style={{fontSize:9,marginTop:2}}>...</div></div>
+          : value
+            ? <img src={value} alt="" style={{width:"100%",height:"100%",objectFit:"cover"}}/>
+            : <div style={{textAlign:"center",color:err?S.red:S.txt3}}><Camera size={20}/><div style={{fontSize:9,marginTop:2}}>{err||"Upload"}</div></div>
+        }
       </div>
-      <input ref={ref} type="file" accept="image/*" onChange={e=>{const f=e.target.files[0];if(!f)return;const r=new FileReader();r.onload=ev=>onChange(ev.target.result);r.readAsDataURL(f);}} style={{display:"none"}}/>
-      {value && <button onClick={e=>{e.stopPropagation();onChange(null);}} style={{position:"absolute",top:-6,right:-6,width:20,height:20,borderRadius:"50%",background:S.red,border:"2px solid #fff",display:"flex",alignItems:"center",justifyContent:"center",cursor:"pointer",padding:0}}><X size={10} color="#fff"/></button>}
+      <input ref={ref} type="file" accept="image/*" onChange={handle} style={{display:"none"}}/>
+      {value && !uploading && <button onClick={e => {e.stopPropagation(); onChange(null);}} style={{position:"absolute",top:-6,right:-6,width:20,height:20,borderRadius:"50%",background:S.red,border:"2px solid #fff",display:"flex",alignItems:"center",justifyContent:"center",cursor:"pointer",padding:0}}><X size={10} color="#fff"/></button>}
     </div>
   );
 };
@@ -95,6 +283,222 @@ const Stat = ({icon,label,value,color}) => (
     <div style={{fontSize:9,fontWeight:700,color:S.txt3,marginTop:2,letterSpacing:.8,textTransform:"uppercase"}}>{label}</div>
   </div>
 );
+
+/* ── Shop Product Card ── */
+const ShopProductCard = ({ article, onAddToCart, onViewDetail }) => {
+  const [selColor, setSelColor] = useState(0);
+  const col = article.colors[selColor];
+  const totalStock = article.colors.reduce((s,c) => s + Object.values(c.sizes).reduce((ss,v) => ss+(v.qty||0),0), 0);
+
+  return (
+    <div style={{background:"#fff",borderRadius:16,border:`1px solid ${S.bdr}`,overflow:"hidden",boxShadow:"0 2px 8px rgba(0,0,0,.05)",display:"flex",flexDirection:"column",cursor:"pointer",transition:"box-shadow .2s,transform .15s"}}
+      onMouseEnter={e=>{e.currentTarget.style.boxShadow="0 8px 28px rgba(67,97,238,.15)";e.currentTarget.style.transform="translateY(-2px)";}}
+      onMouseLeave={e=>{e.currentTarget.style.boxShadow="0 2px 8px rgba(0,0,0,.05)";e.currentTarget.style.transform="none";}}
+      onClick={()=>onViewDetail(article, selColor)}
+    >
+      <div style={{height:200,background:S.bg,overflow:"hidden",position:"relative"}}>
+        {col?.image
+          ? <img src={col.image} alt={article.name} style={{width:"100%",height:"100%",objectFit:"cover",transition:"transform .3s"}}/>
+          : <div style={{display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",height:"100%",gap:6,color:S.txt3}}><Package size={40}/><span style={{fontSize:11}}>No image</span></div>
+        }
+        <div style={{position:"absolute",top:8,left:8}}><Tag color={S.pur}>{article.category}</Tag></div>
+        {totalStock <= 5 && totalStock > 0 && <div style={{position:"absolute",top:8,right:8,background:"#dc2626",color:"#fff",fontSize:10,fontWeight:700,padding:"2px 8px",borderRadius:20}}>Only {totalStock} left!</div>}
+        {totalStock === 0 && <div style={{position:"absolute",inset:0,background:"rgba(0,0,0,.45)",display:"flex",alignItems:"center",justifyContent:"center"}}><span style={{color:"#fff",fontWeight:700,fontSize:13}}>Out of Stock</span></div>}
+      </div>
+      <div style={{padding:"12px 13px",flex:1,display:"flex",flexDirection:"column",gap:6}}>
+        <div style={{fontSize:14,fontWeight:700,lineHeight:1.3}}>{article.name}</div>
+        <div style={{fontSize:11,color:S.txt3}}>{article.fabricQuality}</div>
+        {/* Color swatches */}
+        <div style={{display:"flex",gap:5,flexWrap:"wrap",alignItems:"center"}}>
+          {article.colors.map((c,i) => {
+            const h = c.name.split("").reduce((a,ch)=>a+ch.charCodeAt(0),0)%360;
+            return <button key={i} onClick={e=>{e.stopPropagation();setSelColor(i);}} title={c.name} style={{width:20,height:20,borderRadius:"50%",background:`hsl(${h},55%,55%)`,border:selColor===i?`3px solid ${S.acc}`:`2px solid rgba(0,0,0,.1)`,cursor:"pointer",padding:0,flexShrink:0}}/>;
+          })}
+          <span style={{fontSize:10,color:S.txt3,marginLeft:2}}>{article.colors.length} color{article.colors.length>1?"s":""}</span>
+        </div>
+        <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginTop:"auto",paddingTop:6}}>
+          <div style={{fontSize:11,color:S.txt2}}>{article.selectedSizes.length} sizes</div>
+          <div style={{fontSize:12,fontWeight:700,color:S.acc,display:"flex",alignItems:"center",gap:3}}>View Details <ChevronRight size={12}/></div>
+        </div>
+      </div>
+    </div>
+  );
+};
+
+/* ── Product Detail Modal ── */
+const ProductDetailModal = ({ article, initialColorIdx=0, onClose, onAddToCart }) => {
+  const [selColor, setSelColor] = useState(initialColorIdx);
+  const [selSize, setSelSize] = useState("");
+  const [added, setAdded] = useState(false);
+  if (!article) return null;
+  const col = article.colors[selColor];
+  const availSizes = article.selectedSizes.filter(s => (col?.sizes[s]?.qty||0) > 0);
+  const price = selSize ? col?.sizes[selSize]?.price || 0 : 0;
+  const totalStock = Object.values(col?.sizes||{}).reduce((s,v)=>s+(v.qty||0),0);
+  const doAdd = () => {
+    if (!selSize || !col) return;
+    onAddToCart(article.id, selColor, selSize, col.sizes[selSize]?.price||0);
+    setAdded(true); setTimeout(() => setAdded(false), 1800);
+  };
+  return (
+    <div style={{position:"fixed",inset:0,zIndex:600,background:"rgba(0,0,0,.5)",backdropFilter:"blur(6px)",display:"flex",alignItems:"flex-end",justifyContent:"center"}} onClick={onClose}>
+      <div onClick={e=>e.stopPropagation()} style={{background:"#fff",borderRadius:"20px 20px 0 0",width:"100%",maxWidth:540,maxHeight:"92vh",overflow:"hidden",display:"flex",flexDirection:"column"}}>
+        {/* Image Gallery */}
+        <div style={{position:"relative",height:280,background:S.bg,flexShrink:0}}>
+          {col?.image
+            ? <img src={col.image} alt={article.name} style={{width:"100%",height:"100%",objectFit:"cover"}}/>
+            : <div style={{display:"flex",alignItems:"center",justifyContent:"center",height:"100%",flexDirection:"column",gap:8,color:S.txt3}}><Package size={48}/><span>No image</span></div>
+          }
+          <button onClick={onClose} style={{position:"absolute",top:12,left:12,background:"rgba(0,0,0,.4)",border:"none",borderRadius:"50%",width:34,height:34,display:"flex",alignItems:"center",justifyContent:"center",cursor:"pointer",color:"#fff"}}><X size={16}/></button>
+          <div style={{position:"absolute",top:12,right:12}}><Tag color={S.pur}>{article.category}</Tag></div>
+          {/* Thumbnail row */}
+          {article.colors.length > 1 && (
+            <div style={{position:"absolute",bottom:10,left:0,right:0,display:"flex",justifyContent:"center",gap:6,padding:"0 12px"}}>
+              {article.colors.map((c,i) => {
+                const h = c.name.split("").reduce((a,ch)=>a+ch.charCodeAt(0),0)%360;
+                return (
+                  <button key={i} onClick={()=>{setSelColor(i);setSelSize("");}} style={{width:36,height:36,borderRadius:8,border:selColor===i?`2.5px solid #fff`:`2px solid rgba(255,255,255,.4)`,overflow:"hidden",cursor:"pointer",flexShrink:0,background:`hsl(${h},55%,55%)`,padding:0}}>
+                    {c.image && <img src={c.image} alt={c.name} style={{width:"100%",height:"100%",objectFit:"cover"}}/>}
+                  </button>
+                );
+              })}
+            </div>
+          )}
+        </div>
+
+        {/* Details */}
+        <div style={{padding:"16px 18px",overflowY:"auto",flex:1}}>
+          <div style={{display:"flex",alignItems:"flex-start",justifyContent:"space-between",gap:10,marginBottom:10}}>
+            <div>
+              <h2 style={{margin:0,fontSize:18,fontWeight:800,lineHeight:1.2}}>{article.name}</h2>
+              <div style={{fontSize:12,color:S.txt2,marginTop:3}}>{article.fabricQuality} · {article.category}</div>
+            </div>
+            {totalStock <= 5 && totalStock > 0 && <span style={{background:S.redL,color:S.red,fontSize:11,fontWeight:700,padding:"4px 10px",borderRadius:20,whiteSpace:"nowrap"}}>Only {totalStock} left!</span>}
+          </div>
+
+          {/* Selected color */}
+          <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:14,padding:"8px 12px",background:S.bg,borderRadius:10}}>
+            <div style={{width:24,height:24,borderRadius:"50%",background:`hsl(${col?.name.split("").reduce((a,c)=>a+c.charCodeAt(0),0)%360},55%,55%)`,border:`2px solid rgba(0,0,0,.1)`,flexShrink:0}}/>
+            <div style={{fontSize:13,fontWeight:600}}>{col?.name}</div>
+            <div style={{marginLeft:"auto",display:"flex",gap:6}}>
+              {article.colors.map((c,i) => {
+                const h = c.name.split("").reduce((a,ch)=>a+ch.charCodeAt(0),0)%360;
+                return <button key={i} onClick={()=>{setSelColor(i);setSelSize("");}} title={c.name} style={{width:22,height:22,borderRadius:"50%",background:`hsl(${h},55%,55%)`,border:selColor===i?`3px solid ${S.acc}`:`2px solid rgba(0,0,0,.1)`,cursor:"pointer",padding:0}}/>;
+              })}
+            </div>
+          </div>
+
+          {/* Size picker */}
+          <div style={{marginBottom:14}}>
+            <div style={{fontSize:11,fontWeight:700,color:S.txt3,textTransform:"uppercase",letterSpacing:.8,marginBottom:8}}>Select Size</div>
+            {availSizes.length > 0 ? (
+              <div style={{display:"flex",gap:8,flexWrap:"wrap"}}>
+                {article.selectedSizes.map(s => {
+                  const avail = (col?.sizes[s]?.qty||0) > 0;
+                  return (
+                    <button key={s} onClick={()=>avail&&setSelSize(s)} style={{padding:"8px 14px",borderRadius:10,fontSize:13,fontWeight:700,fontFamily:S.f,border:selSize===s?`2px solid ${S.acc}`:`1.5px solid ${avail?S.bdr:"#e5e7eb"}`,background:selSize===s?S.accL:"#fff",color:selSize===s?S.acc:avail?S.txt:"#ccc",cursor:avail?"pointer":"not-allowed",textDecoration:avail?"none":"line-through"}}>
+                      {s}
+                    </button>
+                  );
+                })}
+              </div>
+            ) : <div style={{fontSize:13,color:S.red,fontWeight:600}}>This color is out of stock</div>}
+          </div>
+
+          {/* Price */}
+          {selSize && price > 0 && (
+            <div style={{fontSize:22,fontWeight:800,color:S.grn,fontFamily:S.fm,marginBottom:14}}>{fmtS(price)}</div>
+          )}
+        </div>
+
+        {/* Add to cart */}
+        <div style={{padding:"14px 18px",borderTop:`1px solid ${S.bdr}`,background:"#fff",flexShrink:0}}>
+          <button onClick={doAdd} disabled={!selSize||availSizes.length===0} style={{width:"100%",padding:"14px 0",borderRadius:14,border:"none",background:added?"#0d9f6e":selSize&&availSizes.length>0?"linear-gradient(135deg,#4361ee,#7c3aed)":"#e5e7eb",color:"#fff",fontWeight:700,fontSize:15,fontFamily:S.f,cursor:selSize&&availSizes.length>0?"pointer":"not-allowed",transition:"background .25s"}}>
+            {added?"✓ Added to Cart!":"Add to Cart 🛒"}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+};
+
+/* ── ChatBot Component ── */
+const ChatBot = ({articles, co, chatMsgs, setChatMsgs, chatOpen, setChatOpen, chatInput, setChatInput, chatLoading, setChatLoading, chatEndRef, chatInputRef, buildSystemPrompt}) => {
+  const sendChat = async () => {
+    const msg = chatInput.trim();
+    if (!msg || chatLoading) return;
+    const userMsg = {role:"user", content:msg};
+    const newMsgs = [...chatMsgs, userMsg];
+    setChatMsgs(newMsgs);
+    setChatInput("");
+    setChatLoading(true);
+    setTimeout(() => chatEndRef.current?.scrollIntoView({behavior:"smooth"}), 50);
+    try {
+      const res = await fetch("https://api.anthropic.com/v1/messages", {
+        method:"POST",
+        headers:{"Content-Type":"application/json"},
+        body: JSON.stringify({model:"claude-sonnet-4-20250514",max_tokens:600,system:buildSystemPrompt(),messages:newMsgs.map(m=>({role:m.role,content:m.content}))})
+      });
+      const data = await res.json();
+      const reply = data.content?.[0]?.text || "Sorry, I couldn't get a response. Please try again!";
+      setChatMsgs(prev => [...prev, {role:"assistant", content:reply}]);
+    } catch {
+      setChatMsgs(prev => [...prev, {role:"assistant", content:"Oops! Something went wrong. 😊"}]);
+    } finally {
+      setChatLoading(false);
+      setTimeout(() => { chatEndRef.current?.scrollIntoView({behavior:"smooth"}); chatInputRef.current?.focus(); }, 80);
+    }
+  };
+  return (
+    <>
+      <button onClick={() => { setChatOpen(o=>!o); setTimeout(()=>chatInputRef.current?.focus(),200); }} style={{position:"fixed",bottom:22,right:20,zIndex:900,width:54,height:54,borderRadius:"50%",border:"none",cursor:"pointer",background:"linear-gradient(135deg,#4361ee,#7c3aed)",boxShadow:"0 4px 20px rgba(67,97,238,.45)",display:"flex",alignItems:"center",justifyContent:"center",color:"#fff",transition:"transform .2s",transform:chatOpen?"scale(0.9)":"scale(1)"}}>
+        {chatOpen ? <X size={22}/> : <MessageCircle size={22}/>}
+        {!chatOpen && chatMsgs.length > 1 && <div style={{position:"absolute",top:-3,right:-3,width:16,height:16,borderRadius:"50%",background:S.grn,border:"2px solid #fff",fontSize:9,fontWeight:800,color:"#fff",display:"flex",alignItems:"center",justifyContent:"center"}}>{chatMsgs.filter(m=>m.role==="assistant").length-1}</div>}
+      </button>
+      {chatOpen && (
+        <div style={{position:"fixed",bottom:88,right:16,zIndex:900,width:"min(380px,calc(100vw - 24px))",height:"min(540px,calc(100vh - 120px))",background:"#fff",borderRadius:18,border:`1px solid ${S.bdr}`,boxShadow:"0 16px 60px rgba(0,0,0,.18)",display:"flex",flexDirection:"column",overflow:"hidden"}}>
+          <div style={{padding:"14px 16px",background:"linear-gradient(135deg,#4361ee,#7c3aed)",display:"flex",alignItems:"center",gap:10}}>
+            <div style={{width:36,height:36,borderRadius:10,background:"rgba(255,255,255,.2)",display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0}}><Bot size={18} color="#fff"/></div>
+            <div style={{flex:1}}>
+              <div style={{fontSize:14,fontWeight:700,color:"#fff"}}>Product Assistant</div>
+              <div style={{fontSize:11,color:"rgba(255,255,255,.75)",display:"flex",alignItems:"center",gap:4}}><div style={{width:6,height:6,borderRadius:"50%",background:"#4ade80"}}/>Online · Ask about our collections</div>
+            </div>
+            <button onClick={()=>setChatMsgs([{role:"assistant",content:"👋 Hello! I'm your product assistant. Ask me about our latest collections, available sizes, fabrics, or anything about our products!"}])} style={{background:"rgba(255,255,255,.15)",border:"none",borderRadius:6,padding:"4px 8px",cursor:"pointer",color:"rgba(255,255,255,.8)",fontSize:10,fontWeight:600,fontFamily:S.f}}>Clear</button>
+          </div>
+          {chatMsgs.length <= 1 && (
+            <div style={{padding:"8px 10px",borderBottom:`1px solid ${S.bdr}`,display:"flex",gap:6,flexWrap:"wrap",background:S.bg}}>
+              {["What's new? ✨","Show all kurtas 👗","Best fabrics? 🧵","Sizes available?"].map(q=>(
+                <button key={q} onClick={()=>{setChatInput(q);setTimeout(()=>chatInputRef.current?.focus(),50);}} style={{padding:"5px 10px",borderRadius:20,border:`1px solid ${S.acc}30`,background:S.accL,color:S.acc,fontSize:11,fontWeight:600,cursor:"pointer",fontFamily:S.f,whiteSpace:"nowrap"}}>{q}</button>
+              ))}
+            </div>
+          )}
+          <div style={{flex:1,overflowY:"auto",padding:"14px 12px",display:"flex",flexDirection:"column",gap:10}}>
+            {chatMsgs.map((m,i)=>(
+              <div key={i} style={{display:"flex",justifyContent:m.role==="user"?"flex-end":"flex-start",gap:7,alignItems:"flex-end"}}>
+                {m.role==="assistant" && <div style={{width:28,height:28,borderRadius:"50%",background:"linear-gradient(135deg,#4361ee,#7c3aed)",display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0,marginBottom:2}}><Sparkles size={13} color="#fff"/></div>}
+                <div style={{maxWidth:"78%",padding:"10px 13px",borderRadius:m.role==="user"?"16px 16px 4px 16px":"16px 16px 16px 4px",background:m.role==="user"?"linear-gradient(135deg,#4361ee,#7c3aed)":S.bg,color:m.role==="user"?"#fff":S.txt,fontSize:13,lineHeight:1.5,fontFamily:S.f,boxShadow:m.role==="user"?"0 2px 8px rgba(67,97,238,.3)":"none",border:m.role==="assistant"?`1px solid ${S.bdr}`:"none",whiteSpace:"pre-wrap",wordBreak:"break-word"}}>{m.content}</div>
+              </div>
+            ))}
+            {chatLoading && (
+              <div style={{display:"flex",gap:7,alignItems:"flex-end"}}>
+                <div style={{width:28,height:28,borderRadius:"50%",background:"linear-gradient(135deg,#4361ee,#7c3aed)",display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0}}><Sparkles size={13} color="#fff"/></div>
+                <div style={{padding:"12px 16px",borderRadius:"16px 16px 16px 4px",background:S.bg,border:`1px solid ${S.bdr}`,display:"flex",gap:4,alignItems:"center"}}>
+                  {[0,1,2].map(d=><div key={d} style={{width:7,height:7,borderRadius:"50%",background:S.acc,animation:"bounce .9s infinite",animationDelay:`${d*.2}s`}}/>)}
+                </div>
+              </div>
+            )}
+            <div ref={chatEndRef}/>
+          </div>
+          <div style={{padding:"10px 12px",borderTop:`1px solid ${S.bdr}`,display:"flex",gap:8,alignItems:"center",background:"#fff"}}>
+            <input ref={chatInputRef} value={chatInput} onChange={e=>setChatInput(e.target.value)} onKeyDown={e=>e.key==="Enter"&&!e.shiftKey&&sendChat()} placeholder="Ask about our products..." style={{flex:1,border:`1px solid ${S.bdr}`,borderRadius:24,padding:"9px 14px",fontSize:13,fontFamily:S.f,color:S.txt,background:S.bg,outline:"none"}}/>
+            <button onClick={sendChat} disabled={!chatInput.trim()||chatLoading} style={{width:38,height:38,borderRadius:"50%",border:"none",background:chatInput.trim()&&!chatLoading?"linear-gradient(135deg,#4361ee,#7c3aed)":"#e5e7ee",color:chatInput.trim()&&!chatLoading?"#fff":S.txt3,display:"flex",alignItems:"center",justifyContent:"center",cursor:chatInput.trim()&&!chatLoading?"pointer":"not-allowed",flexShrink:0,transition:"all .15s"}}><Send size={15}/></button>
+          </div>
+        </div>
+      )}
+      <style>{`@keyframes bounce{0%,80%,100%{transform:translateY(0)}40%{transform:translateY(-6px)}}`}</style>
+    </>
+  );
+};
 
 /* ══════════════════════════════════════════════════════ */
 /* ═══ MAIN APP ═══ */
@@ -134,12 +538,333 @@ export default function App() {
   const [showCompany, setShowCompany] = useState(false);
   const [expandedCh, setExpandedCh] = useState(null);
   const [companyLogo, setCompanyLogo] = useState(null);
-  const [co, setCo] = useState({name:"",address:"",phone:"",email:"",gstin:""});
+  const [co, setCo] = useState({name:"Sagar Impex",address:"Jaipur, Rajasthan",phone:"",email:"",gstin:""});
   const blankCh = {customerId:"",lrNumber:"",remarks:"",items:[]};
   const [chf, setChf] = useState(blankCh);
+  const [editCh, setEditCh] = useState(null); // challan being edited
+
+  // ── Chatbot State ──
+  const [chatOpen, setChatOpen] = useState(false);
+  const [chatMsgs, setChatMsgs] = useState([
+    {role:"assistant", content:"👋 Hello! I'm your product assistant. Ask me about our latest collections, available sizes, fabrics, or anything about our products!"}
+  ]);
+  const [chatInput, setChatInput] = useState("");
+  const [chatLoading, setChatLoading] = useState(false);
+  const chatEndRef = useRef();
+  const chatInputRef = useRef();
+
+  // ── PIN / Auth State ──
+  const DEFAULT_PIN = "1234";
+  const [isLocked, setIsLocked] = useState(true);
+  const [pinInput, setPinInput] = useState("");
+  const [pinError, setPinError] = useState(false);
+  const [savedPin, setSavedPin] = useState(() => { try { return localStorage.getItem("inven_pin") || DEFAULT_PIN; } catch { return DEFAULT_PIN; } });
+  const [showChangePIN, setShowChangePIN] = useState(false);
+  const [newPin1, setNewPin1] = useState(""); const [newPin2, setNewPin2] = useState(""); const [pinChangeErr, setPinChangeErr] = useState("");
+  const [linkCopied, setLinkCopied] = useState(false);
+
+  // ── Shop / Customer View State ──
+  const [isShopView, setIsShopView] = useState(() => typeof window !== "undefined" && window.location.hash === "#shop");
+  const [shopSearch, setShopSearch] = useState("");
+  const [shopCat, setShopCat] = useState("All");
+  const [cart, setCart] = useState([]);
+  const [showCart, setShowCart] = useState(false);
+  const [orderForm, setOrderForm] = useState({name:"",phone:"",note:""});
+  const [orderPlaced, setOrderPlaced] = useState(false);
+  const [detailArticle, setDetailArticle] = useState(null);
+  const [detailColorIdx, setDetailColorIdx] = useState(0);
+  const [showCallback, setShowCallback] = useState(false);
+  const [callbackForm, setCallbackForm] = useState({name:"",phone:"",msg:""});
+  const [callbackSent, setCallbackSent] = useState(false);
+  const [catBanners, setCatBanners] = useState({}); // {catName: base64img}
+  const [showCatBanners, setShowCatBanners] = useState(false);
+
+  // ── Orders State ──
+  const [orders, setOrders] = useState([]);
+  const [expandedOrder, setExpandedOrder] = useState(null);
+
+  // ── Backup State ──
+  const [showBackup, setShowBackup] = useState(false);
+  const [backupMsg, setBackupMsg] = useState("");
+  const backupRef = useRef();
+
+  // ── DB / Sync State ──
+  const [dbStatus, setDbStatus] = useState("loading"); // loading | synced | error | saving
+  const saveTimer = useRef(null);
+  const LS = "inventrack_v1"; // localStorage cache key
+
+  /* ─── SUPABASE HELPERS ─── */
+
+  // Save a single key to settings table
+  const dbSet = async (key, value) => {
+    await db.from("settings").upsert({ key, value: JSON.stringify(value), updated_at: new Date().toISOString() });
+  };
+
+  // Load all data from Supabase on mount
+  const loadFromDB = async () => {
+    setDbStatus("loading");
+    try {
+      const [setsRes, ordsRes] = await Promise.all([
+        db.from("settings").select("*"),
+        db.from("orders").selectOrdered("created_at", false)
+      ]);
+      if (setsRes.data) {
+        const m = Object.fromEntries(setsRes.data.map(s => [s.key, (() => { try { return JSON.parse(s.value); } catch { return s.value; } })()]));
+        if (m.articles)    setArticles(m.articles);
+        if (m.customers)   setCustomers(m.customers);
+        if (m.challans)    setChallans(m.challans);
+        if (m.cats)        setCats(m.cats);
+        if (m.co)          setCo(m.co);
+        if (m.companyLogo !== undefined) setCompanyLogo(m.companyLogo);
+        if (m.catBanners)  setCatBanners(m.catBanners);
+        if (m.pin)         setSavedPin(m.pin);
+        localStorage.setItem(LS, JSON.stringify({ articles: m.articles||[], customers: m.customers||[], challans: m.challans||[], cats: m.cats||DEFAULT_CATS, co: m.co||{}, companyLogo: m.companyLogo||null, catBanners: m.catBanners||{} }));
+      }
+      if (ordsRes.data) setOrders(ordsRes.data.map(o => ({ ...o.data, id: o.id, status: o.status, type: o.type })));
+      setDbStatus("synced");
+    } catch (e) {
+      console.warn("Supabase load failed, using cache:", e.message);
+      setDbStatus("error");
+      try {
+        const saved = localStorage.getItem(LS);
+        if (saved) {
+          const d = JSON.parse(saved);
+          if (d.articles)    setArticles(d.articles);
+          if (d.customers)   setCustomers(d.customers);
+          if (d.challans)    setChallans(d.challans);
+          if (d.cats)        setCats(d.cats);
+          if (d.co)          setCo(d.co);
+          if (d.companyLogo !== undefined) setCompanyLogo(d.companyLogo);
+          if (d.catBanners)  setCatBanners(d.catBanners);
+        }
+      } catch {}
+    }
+  };
+
+  // Debounced save — fires 1.5s after last change
+  const scheduleSave = (newState) => {
+    if (saveTimer.current) clearTimeout(saveTimer.current);
+    setDbStatus("saving");
+    saveTimer.current = setTimeout(async () => {
+      try {
+        await Promise.all([
+          dbSet("articles",    newState.articles    ?? articles),
+          dbSet("customers",   newState.customers   ?? customers),
+          dbSet("challans",    newState.challans    ?? challans),
+          dbSet("cats",        newState.cats        ?? cats),
+          dbSet("co",          newState.co          ?? co),
+          dbSet("companyLogo", newState.companyLogo !== undefined ? newState.companyLogo : companyLogo),
+          dbSet("catBanners",  newState.catBanners  ?? catBanners),
+        ]);
+        setDbStatus("synced");
+        // Update localStorage cache
+        const full = { articles, customers, challans, cats, co, companyLogo, catBanners, ...newState };
+        localStorage.setItem(LS, JSON.stringify(full));
+      } catch (e) {
+        console.error("Save failed:", e.message);
+        setDbStatus("error");
+      }
+    }, 1500);
+  };
+
+  // On mount: load from localStorage immediately (instant), then sync from Supabase
+  useEffect(() => {
+    try {
+      const saved = localStorage.getItem(LS);
+      if (saved) {
+        const d = JSON.parse(saved);
+        if (d.articles)    setArticles(d.articles);
+        if (d.customers)   setCustomers(d.customers);
+        if (d.challans)    setChallans(d.challans);
+        if (d.cats)        setCats(d.cats);
+        if (d.co)          setCo(d.co);
+        if (d.companyLogo !== undefined) setCompanyLogo(d.companyLogo);
+        if (d.catBanners)  setCatBanners(d.catBanners);
+      }
+    } catch {}
+    loadFromDB();
+  }, []);
+
+  // Real-time orders — new shop orders appear instantly
+  useEffect(() => {
+    const channel = supabase.channel("orders-realtime")
+      .on("postgres_changes", { event: "*", schema: "public", table: "orders" }, payload => {
+        if (payload.eventType === "INSERT" || payload.eventType === "UPDATE") {
+          const o = payload.new;
+          const newOrd = { ...o.data, id: o.id, status: o.status, type: o.type };
+          setOrders(prev => {
+            const exists = prev.find(x => x.id === newOrd.id);
+            return exists ? prev.map(x => x.id === newOrd.id ? newOrd : x) : [newOrd, ...prev];
+          });
+        }
+        if (payload.eventType === "DELETE") {
+          setOrders(prev => prev.filter(x => x.id !== payload.old.id));
+        }
+      }).subscribe();
+    return () => supabase.removeChannel(channel);
+  }, []);
+
+  // Override setters to trigger Supabase save
+  const setArticlesDB    = v => { setArticles(v);    scheduleSave({ articles: v }); };
+  const setCustomersDB   = v => { setCustomers(v);   scheduleSave({ customers: v }); };
+  const setChallansDB    = v => { setChallans(v);    scheduleSave({ challans: v }); };
+  const setCatsDB        = v => { setCats(v);        scheduleSave({ cats: v }); };
+  const setCoDB          = v => { setCo(v);          scheduleSave({ co: v }); };
+  const setLogoDb        = v => { setCompanyLogo(v); scheduleSave({ companyLogo: v }); };
+  const setCatBannersDB  = v => { setCatBanners(v);  scheduleSave({ catBanners: v }); };
+
+  // Save new pin to Supabase
+  const saveNewPin = () => {
+    if (newPin1.length < 4) { setPinChangeErr("PIN must be 4 digits"); return; }
+    if (newPin1 !== newPin2) { setPinChangeErr("PINs do not match"); return; }
+    setSavedPin(newPin1);
+    dbSet("pin", newPin1).catch(() => {});
+    try { localStorage.setItem("inven_pin", newPin1); } catch {}
+    setShowChangePIN(false); setNewPin1(""); setNewPin2(""); setPinChangeErr("");
+  };
+
+  // Orders: save to Supabase orders table
+  const saveOrderToDB = async (order) => {
+    const { id, status, type, ...data } = order;
+    await db.from("orders").upsert({ id, data, status: status||"pending", type: type||"order", updated_at: new Date().toISOString() });
+  };
+  const deleteOrderFromDB = async (id) => {
+    await db.from("orders").delete("id", id);
+  };
+
+  // Export all data as JSON backup
+  const exportBackup = () => {
+    const data = { articles, customers, challans, orders, cats, co, exportedAt: new Date().toISOString(), version: 2 };
+    const blob = new Blob([JSON.stringify(data, null, 2)], { type: "application/json" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url; a.download = `InvenTrack_Backup_${new Date().toISOString().slice(0,10)}.json`;
+    document.body.appendChild(a); a.click(); document.body.removeChild(a);
+    setTimeout(() => URL.revokeObjectURL(url), 2000);
+    setBackupMsg("✅ Backup downloaded successfully!");
+    setTimeout(() => setBackupMsg(""), 3000);
+  };
+
+  // Import from JSON backup
+  const importBackup = e => {
+    const file = e.target.files[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = ev => {
+      try {
+        const d = JSON.parse(ev.target.result);
+        if (!d.articles && !d.customers) throw new Error("Invalid");
+        if (d.articles)  setArticlesDB(d.articles);
+        if (d.customers) setCustomersDB(d.customers);
+        if (d.challans)  setChallansDB(d.challans);
+        if (d.cats)      setCatsDB(d.cats);
+        if (d.co)        setCoDB(d.co);
+        setBackupMsg("✅ Data restored! Syncing to cloud…");
+        setTimeout(() => setBackupMsg(""), 4000);
+      } catch { setBackupMsg("❌ Invalid backup file."); setTimeout(() => setBackupMsg(""), 4000); }
+    };
+    reader.readAsText(file); e.target.value = "";
+  };
+
+  // Clear all data
+  const clearAllData = () => {
+    if (!window.confirm("⚠️ Delete ALL data from cloud + this device?\n\nExport a backup first!")) return;
+    setArticlesDB([]); setCustomersDB([]); setChallansDB([]); setOrders([]);
+    setCatsDB(DEFAULT_CATS); setCoDB({ name:"",address:"",phone:"",email:"",gstin:"" }); setLogoDb(null);
+    db.from("orders").deleteAll().catch(()=>{});
+    try { localStorage.removeItem(LS); } catch {}
+    setBackupMsg("🗑️ All data cleared.");
+    setTimeout(() => setBackupMsg(""), 3000);
+  };
+
+  const getStorageInfo = () => {
+    try {
+      const size = new Blob([localStorage.getItem(LS)||""]).size;
+      return size > 1024*1024 ? `${(size/1024/1024).toFixed(1)} MB` : `${(size/1024).toFixed(0)} KB`;
+    } catch { return "—"; }
+  };
+
+  // Hash change for shop view
+  useEffect(() => {
+    const onHash = () => setIsShopView(window.location.hash === "#shop");
+    window.addEventListener("hashchange", onHash);
+    return () => window.removeEventListener("hashchange", onHash);
+  }, []);
+
+  // ── PIN helpers ──
+  const tryUnlock = (pin) => {
+    if (pin === savedPin) { setIsLocked(false); setPinInput(""); setPinError(false); }
+    else { setPinError(true); setPinInput(""); setTimeout(() => setPinError(false), 900); }
+  };
+  const handlePinKey = d => {
+    if (d === "del") { setPinInput(p => p.slice(0,-1)); return; }
+    const next = pinInput + d;
+    setPinInput(next);
+    if (next.length === 4) setTimeout(() => tryUnlock(next), 100);
+  };
 
   // ═══ INVENTORY HELPERS ═══
   const artTot = a => a.colors.reduce((s,c) => s + Object.values(c.sizes).reduce((ss,v) => ss + (v.qty||0), 0), 0);
+
+  // ── Shop / Cart helpers ──
+  const shopArticles = articles.filter(a => {
+    const tot = artTot(a);
+    const matchSearch = a.name.toLowerCase().includes(shopSearch.toLowerCase());
+    const matchCat = shopCat === "All" || a.category === shopCat;
+    return tot > 0 && matchSearch && matchCat;
+  });
+  const addToCart = (articleId, colorIdx, size, price) => {
+    setCart(prev => {
+      const key = `${articleId}-${colorIdx}-${size}`;
+      const exists = prev.find(i => `${i.articleId}-${i.colorIdx}-${i.size}` === key);
+      if (exists) return prev.map(i => `${i.articleId}-${i.colorIdx}-${i.size}` === key ? {...i, qty: i.qty+1} : i);
+      return [...prev, {articleId, colorIdx, size, price, qty:1}];
+    });
+  };
+  const removeFromCart = (articleId, colorIdx, size) => setCart(prev => prev.filter(i => !(i.articleId===articleId&&i.colorIdx===colorIdx&&i.size===size)));
+  const cartTotal = cart.reduce((s,i) => s + i.qty*i.price, 0);
+  const cartQty = cart.reduce((s,i) => s + i.qty, 0);
+  const placeOrder = () => {
+    if (!orderForm.name || !orderForm.phone || cart.length === 0) return;
+    const orderItems = cart.map(i => {
+      const art = articles.find(a => a.id === i.articleId);
+      const col = art?.colors[i.colorIdx];
+      return {articleId:i.articleId, colorIdx:i.colorIdx, articleName:art?.name||"", skuId:art?.skuId||"", colorName:col?.name||"", colorImage:col?.image||null, size:i.size, qty:i.qty, price:i.price, amount:i.qty*i.price};
+    });
+    const order = {id:uid(), number:`ORD-${String(orders.length+1).padStart(4,"0")}`, date:Date.now(), customer:{name:orderForm.name, phone:orderForm.phone}, note:orderForm.note, items:orderItems, totalQty:cart.reduce((s,i)=>s+i.qty,0), totalAmt:cartTotal, status:"pending", type:"order"};
+    setOrders(prev => [order, ...prev]);
+    saveOrderToDB(order).catch(e => console.error("Order save failed:", e));
+    setCart([]); setOrderForm({name:"",phone:"",note:""}); setOrderPlaced(true);
+    setTimeout(() => setOrderPlaced(false), 4000);
+    setShowCart(false);
+  };
+  const updateOrderStatus = (id, status) => {
+    const updated = orders.map(o => o.id===id ? {...o, status} : o);
+    setOrders(updated);
+    saveOrderToDB(updated.find(o=>o.id===id)).catch(()=>{});
+  };
+  const shareLink = () => {
+    const url = window.location.href.replace(/#.*/,"") + "#shop";
+    try { navigator.clipboard.writeText(url); } catch {}
+    setLinkCopied(true); setTimeout(() => setLinkCopied(false), 2500);
+  };
+
+  const submitCallback = () => {
+    if (!callbackForm.name || !callbackForm.phone) return;
+    const order = {id:uid(), number:`CB-${uid().slice(0,4).toUpperCase()}`, date:Date.now(), customer:{name:callbackForm.name,phone:callbackForm.phone}, note:`CALLBACK REQUEST: ${callbackForm.msg}`, items:[], totalQty:0, totalAmt:0, status:"pending", type:"callback"};
+    setOrders(prev => [order, ...prev]);
+    saveOrderToDB(order).catch(()=>{});
+    setCallbackSent(true); setCallbackForm({name:"",phone:"",msg:""});
+    setTimeout(() => { setCallbackSent(false); setShowCallback(false); }, 3000);
+  };
+
+  const waLink = (phone, msg) => `https://wa.me/${phone.replace(/\D/g,"")}?text=${encodeURIComponent(msg)}`;
+
+  const birthdayWAMsg = (c) => {
+    const coName = co.name || "Our Store";
+    return `🎂 *Happy Birthday ${c.name}!*\n\nWishing you a wonderful day! 🎉\n\nAs a special birthday gift from *${coName}*, enjoy exclusive offers on your next purchase.\n\nVisit us or reply to this message to shop. We value your continued support! 🛍️\n\n— Team ${coName}`;
+  };
+
   const totalPcs = articles.reduce((s,a) => s + artTot(a), 0);
   const totalCols = articles.reduce((s,a) => s + a.colors.length, 0);
   const lowStock = articles.filter(a => a.colors.some(c => Object.values(c.sizes).some(v => (v.qty||0) > 0 && (v.qty||0) <= 5))).length;
@@ -170,12 +895,12 @@ export default function App() {
     const ff = af.fabricQuality === "Other (Enter Manually)" ? af.customFabric : af.fabricQuality;
     if (!af.skuId || !af.name || !af.category || !ff) return;
     const d = {...af, fabricQuality:ff}; delete d.customFabric;
-    if (editArt) setArticles(articles.map(a => a.id === editArt.id ? {...a,...d} : a));
-    else setArticles([...articles, {id:uid(),...d,createdAt:Date.now()}]);
+    const updated = editArt ? articles.map(a => a.id === editArt.id ? {...a,...d} : a) : [...articles, {id:uid(),...d,createdAt:Date.now()}];
+    setArticlesDB(updated);
     setShowArtModal(false);
   };
-  const delArt = id => { setArticles(articles.filter(a => a.id !== id)); if (expanded === id) setExpanded(null); };
-  const addCat = () => { const c = newCat.trim(); if (c && !cats.includes(c)) { setCats([...cats, c]); setNewCat(""); } };
+  const delArt = id => { setArticlesDB(articles.filter(a => a.id !== id)); if (expanded === id) setExpanded(null); };
+  const addCat = () => { const c = newCat.trim(); if (c && !cats.includes(c)) { setCatsDB([...cats, c]); setNewCat(""); } };
   const filteredArt = articles.filter(a => (a.name.toLowerCase().includes(search.toLowerCase()) || a.skuId.toLowerCase().includes(search.toLowerCase())) && (fCat === "All" || a.category === fCat));
 
   // ═══ CUSTOMER HELPERS ═══
@@ -183,16 +908,29 @@ export default function App() {
   const openEditCust = c => { setEditCust(c); setCf({name:c.name,phone:c.phone,whatsapp:c.whatsapp||"",email:c.email||"",dob:c.dob||"",address:c.address||"",city:c.city||"",state:c.state||"",pincode:c.pincode||"",company:c.company||"",gst:c.gst||"",agent:c.agent||"",transport:c.transport||""}); setShowCustModal(true); };
   const saveCust = () => {
     if (!cf.name || !cf.phone) return;
-    if (editCust) setCustomers(customers.map(c => c.id === editCust.id ? {...c,...cf} : c));
-    else setCustomers([...customers, {id:uid(),...cf,createdAt:Date.now(),purchases:[]}]);
+    const updated = editCust ? customers.map(c => c.id === editCust.id ? {...c,...cf} : c) : [...customers, {id:uid(),...cf,createdAt:Date.now(),purchases:[]}];
+    setCustomersDB(updated);
     setShowCustModal(false);
   };
-  const delCust = id => { setCustomers(customers.filter(c => c.id !== id)); if (expandedCust === id) setExpandedCust(null); };
-  const extSubmit = () => { if (!extF.name || !extF.phone) return; setCustomers([...customers, {id:uid(),...extF,createdAt:Date.now(),purchases:[]}]); setExtF({...blankC}); setShowCustForm(false); };
+  const delCust = id => { setCustomersDB(customers.filter(c => c.id !== id)); if (expandedCust === id) setExpandedCust(null); };
+  const extSubmit = () => { if (!extF.name || !extF.phone) return; setCustomersDB([...customers, {id:uid(),...extF,createdAt:Date.now(),purchases:[]}]); setExtF({...blankC}); setShowCustForm(false); };
   const copyLink = () => { navigator.clipboard?.writeText("https://yourcompany.com/register").then(() => { setCopied(true); setTimeout(() => setCopied(false), 2000); }); };
   const filteredCust = customers.filter(c => c.name.toLowerCase().includes(cSearch.toLowerCase()) || c.phone.includes(cSearch) || (c.company||"").toLowerCase().includes(cSearch.toLowerCase()));
   const upBdays = customers.filter(c => c.dob).map(c => { const d = new Date(c.dob), now = new Date(), ty = new Date(now.getFullYear(), d.getMonth(), d.getDate()); if (ty < now) ty.setFullYear(now.getFullYear()+1); return {...c, nextBday:ty, daysUntil:Math.ceil((ty-now)/864e5)}; }).sort((a,b) => a.daysUntil - b.daysUntil).slice(0, 5);
   const av = name => { const h = name.split("").reduce((a,c) => a + c.charCodeAt(0), 0) % 360; return {bg:`hsl(${h},50%,92%)`,color:`hsl(${h},50%,40%)`}; };
+  const custPurchaseHistory = (cust) => {
+    const fromChallans = challans.filter(ch => ch.customerId === cust.id || ch.customer?.name === cust.name).map(ch => ({
+      id:ch.id, number:ch.number, date:ch.date, type:"challan",
+      items: ch.items.map(it => ({name:it.articleName, color:it.colorName, sizes:it.sizes})),
+      totalQty:ch.totalQty, totalAmt:ch.totalAmt
+    }));
+    const fromOrders = orders.filter(o => o.customer?.phone === cust.phone && o.status === "approved" && o.type !== "callback").map(o => ({
+      id:o.id, number:o.number, date:o.date, type:"order",
+      items: o.items.map(it => ({name:it.articleName, color:it.colorName, sizes:[{size:it.size,qty:it.qty,amount:it.amount}]})),
+      totalQty:o.totalQty, totalAmt:o.totalAmt
+    }));
+    return [...fromChallans, ...fromOrders].sort((a,b) => b.date - a.date);
+  };
 
   // ═══ CHALLAN HELPERS ═══
   const selCust = customers.find(c => c.id === chf.customerId);
@@ -205,10 +943,43 @@ export default function App() {
     setChf({...chf, items});
   };
   const updChQty = (i, sz, val) => { const items = [...chf.items]; items[i] = {...items[i], sizes:{...items[i].sizes,[sz]:Math.max(0,Number(val)||0)}}; setChf({...chf, items}); };
-  const getChArt = it => articles.find(a => a.id === it.articleId);
+  const updChPrice = (i, sz, val) => { const items = [...chf.items]; items[i] = {...items[i], prices:{...items[i].prices,[sz]:Math.max(0,Number(val)||0)}}; setChf({...chf, items}); };
+  const chArts = editChArts || articles; // use restored arts during edit
+  const getChArt = it => chArts.find(a => a.id === it.articleId);
   const getChCol = it => { const a = getChArt(it); return a?.colors[Number(it.colorIdx)]; };
   const chTotQty = chf.items.reduce((s,it) => s + Object.values(it.sizes).reduce((ss,q) => ss + q, 0), 0);
-  const chTotAmt = chf.items.reduce((s,it) => { const col = getChCol(it); if (!col) return s; return s + Object.entries(it.sizes).reduce((ss,[sz,q]) => ss + q * (col.sizes[sz]?.price || 0), 0); }, 0);
+  const chTotAmt = chf.items.reduce((s,it) => { const col = getChCol(it); if (!col) return s; return s + Object.entries(it.sizes).reduce((ss,[sz,q]) => { const p = (it.prices?.[sz] !== undefined && it.prices[sz] !== "") ? Number(it.prices[sz]) : (col.sizes[sz]?.price || 0); return ss + q * p; }, 0); }, 0);
+
+  const openNewChallan = () => { setEditCh(null); setChf({...blankCh}); setShowChModal(true); };
+
+  const [editChArts, setEditChArts] = useState(null); // restored articles during edit
+
+  const openEditChallan = ch => {
+    const restoredArts = articles.map(a => {
+      const copy = JSON.parse(JSON.stringify(a));
+      ch.items.forEach(it => {
+        if (it.articleId !== a.id) return;
+        const ci = Number(it.colorIdx);
+        (it.sizesRaw||[]).forEach(({size,qty}) => {
+          if (copy.colors[ci]?.sizes[size]) copy.colors[ci].sizes[size].qty += qty;
+        });
+      });
+      return copy;
+    });
+    setEditChArts(restoredArts); // keep restored arts separate — don't save to DB yet
+    setEditCh(ch);
+    setChf({
+      customerId: ch.customerId || "",
+      lrNumber: ch.lrNumber || "",
+      remarks: ch.remarks || "",
+      items: ch.items.map(it => ({
+        articleId: it.articleId || "",
+        colorIdx: it.colorIdx !== undefined ? String(it.colorIdx) : "",
+        sizes: Object.fromEntries((it.sizesRaw||[]).map(({size,qty}) => [size, qty]))
+      }))
+    });
+    setShowChModal(true);
+  };
 
   const saveChallan = () => {
     if (!chf.customerId || chf.items.length === 0) return;
@@ -216,20 +987,31 @@ export default function App() {
     if (valid.length === 0) return;
     const challanItems = valid.map(it => {
       const art = getChArt(it); const col = getChCol(it);
-      return { articleName:art.name, skuId:art.skuId, colorName:col.name, colorImage:col.image,
-        sizes:Object.entries(it.sizes).filter(([,q]) => q > 0).map(([sz,q]) => ({size:sz,qty:q,price:col.sizes[sz]?.price||0,amount:q*(col.sizes[sz]?.price||0)}))
+      const sizesData = Object.entries(it.sizes).filter(([,q]) => q > 0).map(([sz,q]) => {
+        const defaultPrice = col.sizes[sz]?.price || 0;
+        const price = (it.prices?.[sz] !== undefined && it.prices[sz] !== "") ? Number(it.prices[sz]) : defaultPrice;
+        return {size:sz, qty:q, price, amount:q*price};
+      });
+      return {
+        articleId: art.id, colorIdx: Number(it.colorIdx),
+        articleName:art.name, skuId:art.skuId, colorName:col.name, colorImage:col.image,
+        sizes:sizesData, sizesRaw: sizesData.map(s => ({size:s.size, qty:s.qty}))
       };
     });
     const tQty = challanItems.reduce((s,it) => s + it.sizes.reduce((ss,sz) => ss + sz.qty, 0), 0);
     const tAmt = challanItems.reduce((s,it) => s + it.sizes.reduce((ss,sz) => ss + sz.amount, 0), 0);
     const cust = customers.find(c => c.id === chf.customerId);
-    const newCh = {
-      id:uid(), number:`DC-${String(challans.length+1).padStart(4,"0")}`, date:Date.now(),
-      customer:{name:cust.name,phone:cust.phone,address:`${cust.address||""}, ${cust.city||""}, ${cust.state||""} - ${cust.pincode||""}`,gst:cust.gst,transport:cust.transport},
+    const challan = {
+      id: editCh ? editCh.id : uid(),
+      number: editCh ? editCh.number : `DC-${String(challans.length+1).padStart(4,"0")}`,
+      date: editCh ? editCh.date : Date.now(),
+      customerId: chf.customerId,
+      customer:{name:cust.name,phone:cust.phone,address:`${cust.address||""}, ${cust.city||""}, ${cust.state||""} - ${cust.pincode||""}`.replace(/^,\s*/,""),gst:cust.gst,transport:cust.transport},
       lrNumber:chf.lrNumber, remarks:chf.remarks, items:challanItems, totalQty:tQty, totalAmt:tAmt
     };
-    // Deduct stock
-    const updArts = articles.map(a => {
+    // Deduct stock from restored arts (edit) or current arts (new)
+    const baseArts = editChArts || articles;
+    const updArts = baseArts.map(a => {
       const copy = JSON.parse(JSON.stringify(a));
       valid.filter(it => it.articleId === a.id).forEach(it => {
         const ci = Number(it.colorIdx);
@@ -237,85 +1019,504 @@ export default function App() {
       });
       return copy;
     });
-    setArticles(updArts);
-    setChallans([newCh, ...challans]);
+    const updChallans = editCh ? challans.map(c => c.id === editCh.id ? challan : c) : [challan, ...challans];
+    setArticlesDB(updArts);
+    setChallansDB(updChallans);
+    setEditChArts(null); // clear temp restored arts
     setShowChModal(false);
     setChf({...blankCh});
+    setEditCh(null);
+  };
+
+  const delChallan = ch => {
+    const restoredArts = articles.map(a => {
+      const copy = JSON.parse(JSON.stringify(a));
+      ch.items.forEach(it => {
+        if (it.articleId !== a.id) return;
+        const ci = Number(it.colorIdx);
+        (it.sizesRaw||[]).forEach(({size,qty}) => {
+          if (copy.colors[ci]?.sizes[size]) copy.colors[ci].sizes[size].qty += qty;
+        });
+      });
+      return copy;
+    });
+    setArticlesDB(restoredArts);
+    setChallansDB(challans.filter(c => c.id !== ch.id));
+    if (expandedCh === ch.id) setExpandedCh(null);
+  };
+
+  /* ── Challan PDF/Print ── */
+  const rupee = (n) => "Rs." + Number(n).toLocaleString("en-IN");
+  const getChallanHTML = ch => {
+    // One row per article+color, sizes shown horizontally — much more compact
+    const rows = ch.items.map((it, idx) => {
+      const sizeCells = it.sizes.map(sz =>
+        `<td class="sz-cell"><div class="sz-lbl">${sz.size}</div><div class="sz-qty">${sz.qty}</div><div class="sz-rate">${rupee(sz.price)}</div></td>`
+      ).join("");
+      const rowAmt = it.sizes.reduce((s,sz) => s + sz.amount, 0);
+      const rowQty = it.sizes.reduce((s,sz) => s + sz.qty, 0);
+      const bg = idx % 2 === 0 ? "#fff" : "#f9fafb";
+      return `<tr style="background:${bg}">
+        <td class="sno">${idx+1}</td>
+        <td class="art-td"><div class="art-name">${it.articleName}</div><div class="sku">${it.skuId}</div></td>
+        <td class="col-td"><div class="color-cell">${it.colorImage?`<img src="${it.colorImage}" class="col-img"/>`:""}
+          <span class="col-dot" style="background:hsl(${it.colorName.split("").reduce((a,c)=>a+c.charCodeAt(0),0)%360},55%,55%)"></span>${it.colorName}</div></td>
+        <td class="sizes-td"><div class="sizes-wrap">${sizeCells}</div></td>
+        <td class="qty-td bold">${rowQty}</td>
+        <td class="amt-td bold">${rupee(rowAmt)}</td>
+      </tr>`;
+    }).join("");
+
+    return `<!DOCTYPE html><html><head><title>${ch.number}</title>
+<style>
+  *{margin:0;padding:0;box-sizing:border-box}
+  body{font-family:'Segoe UI',sans-serif;padding:18px 22px;color:#1a1a2e;font-size:11px}
+  .hdr{display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:10px;padding-bottom:10px;border-bottom:2.5px solid #4361ee}
+  .co-logo{width:48px;height:48px;object-fit:contain;border-radius:6px;margin-bottom:4px}
+  .co-name{font-size:16px;font-weight:800;line-height:1.2}
+  .co-det{font-size:10px;color:#6b7280;margin-top:1px}
+  .ch-title{text-align:right}
+  .ch-title h1{font-size:18px;font-weight:800;color:#4361ee;letter-spacing:-.3px}
+  .ch-title p{font-size:10px;color:#6b7280;margin-top:2px}
+  .info-grid{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:10px}
+  .info-box{padding:7px 10px;background:#f8fafc;border-radius:6px;border:1px solid #e5e7eb}
+  .info-box h4{font-size:8px;text-transform:uppercase;letter-spacing:1px;color:#9ca3af;margin-bottom:3px}
+  .info-box p{font-size:10px;color:#374151;line-height:1.4}
+  table{width:100%;border-collapse:collapse}
+  thead tr{background:#1e293b}
+  th{color:#fff;padding:5px 7px;text-align:left;font-size:9px;text-transform:uppercase;letter-spacing:.5px}
+  td{padding:5px 7px;border-bottom:1px solid #e5e7eb;font-size:10px;vertical-align:middle}
+  .sno{color:#9ca3af;width:22px}
+  .art-td{min-width:100px}
+  .art-name{font-weight:600;font-size:10px}
+  .sku{font-size:9px;color:#9ca3af;margin-top:1px}
+  .col-td{min-width:100px;vertical-align:middle}
+  .color-cell{display:flex;flex-direction:column;align-items:center;gap:5px;font-size:10px;text-align:center}
+  .col-img{width:72px;height:72px;border-radius:8px;object-fit:cover;border:1px solid #e5e7eb;flex-shrink:0;display:block}
+  .col-dot{display:inline-block;width:9px;height:9px;border-radius:50%;flex-shrink:0}
+  .sizes-td{padding:3px 7px}
+  .sizes-wrap{display:flex;flex-wrap:wrap;gap:3px}
+  .sz-cell{display:inline-block;text-align:center;background:#eef1ff;border-radius:4px;padding:2px 6px;min-width:38px}
+  .sz-lbl{font-size:8px;font-weight:700;color:#4361ee}
+  .sz-qty{font-size:11px;font-weight:800;color:#1a1a2e;line-height:1.2}
+  .sz-rate{font-size:8px;color:#0d9f6e}
+  .qty-td{text-align:center;font-size:11px;width:36px}
+  .amt-td{text-align:right;font-size:10px;width:70px}
+  .bold{font-weight:700}
+  .grand td{background:#ecfdf5;font-weight:800;font-size:11px;border-top:2px solid #0d9f6e}
+  .notes{font-size:10px;color:#6b7280;margin-top:8px;padding:6px 10px;background:#fffbeb;border-radius:5px;border-left:3px solid #f59e0b}
+  .footer{margin-top:24px;padding-top:10px;border-top:1px solid #e5e7eb;display:flex;justify-content:space-between}
+  .sig .line{border-top:1px solid #374151;margin-top:44px;padding-top:5px;font-size:10px;color:#6b7280;text-align:center;min-width:160px}
+  @media print{
+    body{padding:10px 14px}
+    @page{margin:8mm}
+  }
+</style></head><body>
+<div class="hdr">
+  <div>${companyLogo?`<img src="${companyLogo}" class="co-logo"/>`:""}
+    <div class="co-name">${co.name||"Your Company"}</div>
+    <div class="co-det">${co.address||""}</div>
+    <div class="co-det">${[co.phone,co.email].filter(Boolean).join(" | ")}</div>
+    ${co.gstin?`<div class="co-det">GSTIN: ${co.gstin}</div>`:""}
+  </div>
+  <div class="ch-title"><h1>DELIVERY CHALLAN</h1><p>${ch.number} &nbsp;|&nbsp; ${fmtD(ch.date)}</p></div>
+</div>
+<div class="info-grid">
+  <div class="info-box"><h4>Bill To</h4>
+    <p><strong>${ch.customer.name}</strong></p>
+    <p>${ch.customer.address}</p>
+    <p>Ph: ${ch.customer.phone}${ch.customer.gst?` &nbsp;|&nbsp; GST: ${ch.customer.gst}`:""}</p>
+  </div>
+  <div class="info-box"><h4>Dispatch Info</h4>
+    <p>Transport: <strong>${ch.customer.transport||"—"}</strong></p>
+    <p>LR No: <strong>${ch.lrNumber||"—"}</strong></p>
+  </div>
+</div>
+<table>
+  <thead><tr>
+    <th>#</th><th>Article</th><th>Color</th><th>Sizes (Qty @ Rate)</th>
+    <th style="text-align:center">Pcs</th><th style="text-align:right">Amount</th>
+  </tr></thead>
+  <tbody>${rows}
+  <tr class="grand">
+    <td colspan="4" style="text-align:right;font-size:11px">Grand Total</td>
+    <td style="text-align:center">${ch.totalQty} pcs</td>
+    <td style="text-align:right">${rupee(ch.totalAmt)}</td>
+  </tr>
+  </tbody>
+</table>
+${ch.remarks?`<div class="notes"><strong>Remarks:</strong> ${ch.remarks}</div>`:""}
+<div class="footer">
+  <div class="sig"><div class="line">Receiver's Signature</div></div>
+  <div class="sig"><div class="line">Authorized Signature</div></div>
+</div>
+</body></html>`;
   };
 
   const printChallan = ch => {
-    const w = window.open("","_blank","width=800,height=1000");
-    const rows = ch.items.flatMap(it => it.sizes.map(sz => `<tr><td>${it.articleName}<br/><small>${it.skuId}</small></td><td>${it.colorName}</td><td>${sz.size}</td><td style="text-align:center">${sz.qty}</td><td style="text-align:right">${fmtS(sz.price)}</td><td style="text-align:right;font-weight:700">${fmtS(sz.amount)}</td></tr>`)).join("");
-    w.document.write(`<!DOCTYPE html><html><head><title>${ch.number}</title>
-      <style>*{margin:0;padding:0;box-sizing:border-box}body{font-family:'Segoe UI',sans-serif;padding:30px;color:#1a1a2e;font-size:13px}
-      .hdr{display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:24px;padding-bottom:16px;border-bottom:3px solid #4361ee}
-      .co-name{font-size:20px;font-weight:800}.co-det{font-size:11px;color:#6b7280;margin-top:2px}
-      .ch-title{text-align:right}.ch-title h1{font-size:24px;font-weight:800;color:#4361ee}.ch-title p{font-size:12px;color:#6b7280}
-      .info-grid{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:20px}
-      .info-box{padding:14px;background:#f8fafc;border-radius:8px}.info-box h4{font-size:9px;text-transform:uppercase;letter-spacing:1px;color:#9ca3af;margin-bottom:6px}.info-box p{font-size:12px;color:#374151;line-height:1.5}
-      table{width:100%;border-collapse:collapse;margin:16px 0}th{background:#1e293b;color:#fff;padding:8px 12px;text-align:left;font-size:10px;text-transform:uppercase}
-      td{padding:10px 12px;border-bottom:1px solid #e5e7eb;font-size:12px}
-      .grand{background:#ecfdf5;font-weight:800;font-size:14px}
-      .notes{font-size:11px;color:#6b7280;margin-top:16px;padding:10px 14px;background:#fffbeb;border-radius:6px;border-left:3px solid #f59e0b}
-      .footer{margin-top:40px;padding-top:16px;border-top:1px solid #e5e7eb;display:flex;justify-content:space-between}
-      .sig{width:180px;text-align:center}.sig .line{border-top:1px solid #374151;margin-top:60px;padding-top:6px;font-size:11px;color:#6b7280}
-      @media print{body{padding:16px}}</style></head><body>
-      <div class="hdr"><div>${companyLogo?`<img src="${companyLogo}" style="width:56px;height:56px;object-fit:contain;border-radius:8px;margin-bottom:6px"/>`:""}<div class="co-name">${co.name||"Your Company"}</div><div class="co-det">${co.address||""}</div><div class="co-det">${co.phone||""} ${co.email?`| ${co.email}`:""}</div>${co.gstin?`<div class="co-det">GSTIN: ${co.gstin}</div>`:""}</div>
-      <div class="ch-title"><h1>DELIVERY CHALLAN</h1><p>${ch.number} | ${fmtD(ch.date)}</p></div></div>
-      <div class="info-grid"><div class="info-box"><h4>Customer</h4><p><strong>${ch.customer.name}</strong></p><p>${ch.customer.address}</p><p>Phone: ${ch.customer.phone}</p>${ch.customer.gst?`<p>GST: ${ch.customer.gst}</p>`:""}</div>
-      <div class="info-box"><h4>Transport Details</h4><p>Transport: ${ch.customer.transport||"—"}</p><p>LR Number: ${ch.lrNumber||"—"}</p></div></div>
-      <table><thead><tr><th>Article</th><th>Color</th><th>Size</th><th style="text-align:center">Qty</th><th style="text-align:right">Rate</th><th style="text-align:right">Amount</th></tr></thead><tbody>${rows}
-      <tr class="grand"><td colspan="3" style="text-align:right">Grand Total</td><td style="text-align:center;font-weight:800">${ch.totalQty} pcs</td><td></td><td style="text-align:right">${fmtR(ch.totalAmt)}</td></tr></tbody></table>
-      ${ch.remarks?`<div class="notes"><strong>Remarks:</strong> ${ch.remarks}</div>`:""}
-      <div class="footer"><div class="sig"><div class="line">Receiver's Signature</div></div><div class="sig"><div class="line">Authorized Signature</div></div></div></body></html>`);
-    w.document.close(); setTimeout(() => w.print(), 500);
+    const w = window.open("", "_blank", "width=900,height=1100");
+    if (!w) { alert("Please allow pop-ups to print challans."); return; }
+    w.document.write(getChallanHTML(ch));
+    w.document.close();
+    w.onload = () => setTimeout(() => { w.focus(); w.print(); }, 300);
+    // fallback if onload already fired
+    setTimeout(() => { try { w.focus(); w.print(); } catch {} }, 800);
+  };
+
+  const downloadPDF = ch => {
+    // Download as HTML file — open in browser then Ctrl+P → Save as PDF
+    const html = getChallanHTML(ch);
+    const blob = new Blob([html], {type: "text/html;charset=utf-8"});
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `${ch.number}.html`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    setTimeout(() => URL.revokeObjectURL(url), 3000);
+  };
+
+  // ═══ CHATBOT ═══
+  const buildSystemPrompt = () => {
+    const artList = articles.map(a => {
+      const colorDetails = a.colors.map(c => {
+        const sizes = a.selectedSizes.map(s => `${s}:${c.sizes[s]?.qty||0}pcs@₹${c.sizes[s]?.price||0}`).join(", ");
+        return `    • ${c.name} [${sizes}]`;
+      }).join("\n");
+      return `• ${a.name} (SKU: ${a.skuId}) — ${a.category} | Fabric: ${a.fabricQuality}\n${colorDetails}`;
+    }).join("\n");
+    return `You are a friendly and enthusiastic customer-facing product assistant for a clothing/fashion store.
+Your job is to help customers discover products, answer questions about new launches, fabrics, sizes, colors, and availability.
+
+CURRENT INVENTORY:
+${artList || "No products added yet. Let customers know exciting new arrivals are coming soon!"}
+
+GUIDELINES:
+- Be warm, helpful, and excited about the products
+- If a customer asks about a specific item, describe it engagingly with fabric and color details
+- If stock is low (≤5 pcs), create gentle urgency: "Only a few left!"
+- If out of stock on a size, suggest other available sizes
+- Keep responses concise and friendly — 2-4 sentences max unless listing products
+- Use emojis naturally but not excessively
+- Never reveal internal SKU IDs or pricing unless directly asked
+- If asked about something not in inventory, say new collections are always coming and encourage them to check back
+- Format product lists with bullet points for readability`;
   };
 
   // ═══ RENDER ═══
-  return (
-    <div style={{minHeight:"100vh",fontFamily:S.f,background:S.bg,color:S.txt}}>
-      <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700;800;900&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet"/>
-      <style>{`*{box-sizing:border-box}input[type=number]::-webkit-inner-spin-button,input[type=number]::-webkit-outer-spin-button{-webkit-appearance:none}input[type=number]{-moz-appearance:textfield}@media(max-width:640px){.stat-grid{grid-template-columns:1fr 1fr!important}.hide-mob{display:none!important}.form-grid2{grid-template-columns:1fr!important}}`}</style>
 
-      {/* HEADER */}
-      <div style={{background:S.card,borderBottom:`1px solid ${S.bdr}`,padding:"10px 16px",position:"sticky",top:0,zIndex:100}}>
-        <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",maxWidth:1100,margin:"0 auto",flexWrap:"wrap",gap:8}}>
-          <div style={{display:"flex",alignItems:"center",gap:10}}>
-            <div style={{width:36,height:36,borderRadius:10,background:"linear-gradient(135deg,#4361ee,#7c3aed)",display:"flex",alignItems:"center",justifyContent:"center",color:"#fff"}}><Package size={20}/></div>
-            <h1 style={{margin:0,fontSize:16,fontWeight:800,letterSpacing:-.3}}>InvenTrack</h1>
+  // ── PIN Lock Screen ──
+  if (isLocked && !isShopView) return (
+    <div style={{minHeight:"100vh",background:"linear-gradient(135deg,#1a1d26 0%,#2d2f45 100%)",display:"flex",alignItems:"center",justifyContent:"center",fontFamily:S.f}}>
+      <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700;800;900&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet"/>
+      <div style={{background:"rgba(255,255,255,.04)",border:"1px solid rgba(255,255,255,.1)",borderRadius:24,padding:"36px 32px",width:"min(360px,92vw)",backdropFilter:"blur(20px)",boxShadow:"0 32px 80px rgba(0,0,0,.4)"}}>
+        <div style={{textAlign:"center",marginBottom:28}}>
+          <div style={{width:60,height:60,borderRadius:18,background:"linear-gradient(135deg,#4361ee,#7c3aed)",display:"flex",alignItems:"center",justifyContent:"center",margin:"0 auto 14px"}}><Lock size={26} color="#fff"/></div>
+          <h2 style={{color:"#fff",margin:0,fontSize:20,fontWeight:800,letterSpacing:-.3}}>InvenTrack</h2>
+          <p style={{color:"rgba(255,255,255,.5)",margin:"6px 0 0",fontSize:13}}>Enter your PIN to continue</p>
+        </div>
+        {/* PIN dots */}
+        <div style={{display:"flex",justifyContent:"center",gap:14,marginBottom:28}}>
+          {[0,1,2,3].map(i => (
+            <div key={i} style={{width:16,height:16,borderRadius:"50%",background: i < pinInput.length ? "#4361ee" : "rgba(255,255,255,.15)", border:"2px solid " + (pinError ? "#dc2626" : i < pinInput.length ? "#4361ee" : "rgba(255,255,255,.2)"), transition:"all .15s", transform: pinError ? "translateX(4px)" : "none"}}/>
+          ))}
+        </div>
+        {pinError && <p style={{color:"#f87171",textAlign:"center",fontSize:12,marginBottom:14,marginTop:-18}}>Incorrect PIN</p>}
+        {/* Keypad */}
+        <div style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:10}}>
+          {["1","2","3","4","5","6","7","8","9","","0","del"].map((d,i) => d === "" ? <div key={i}/> : (
+            <button key={i} onClick={() => handlePinKey(d)} style={{padding:"16px 0",borderRadius:14,border:"1px solid rgba(255,255,255,.1)",background:"rgba(255,255,255,.07)",color:"#fff",fontSize:d==="del"?12:20,fontWeight:d==="del"?600:700,fontFamily:S.f,cursor:"pointer",transition:"background .1s"}}
+              onMouseEnter={e=>e.currentTarget.style.background="rgba(255,255,255,.14)"}
+              onMouseLeave={e=>e.currentTarget.style.background="rgba(255,255,255,.07)"}>
+              {d==="del"?"⌫":d}
+            </button>
+          ))}
+        </div>
+        <div style={{textAlign:"center",marginTop:20}}>
+          <span style={{color:"rgba(255,255,255,.3)",fontSize:11}}>Default PIN: 1234</span>
+        </div>
+      </div>
+    </div>
+  );
+
+  // ── Customer Shop View ──
+  if (isShopView) {
+    return (
+    <div style={{minHeight:"100vh",fontFamily:S.f,background:"#f8f9fc",color:S.txt}}>
+      <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700;800;900&display=swap" rel="stylesheet"/>
+      <style>{`*{box-sizing:border-box} @media(max-width:600px){.shop-grid{grid-template-columns:1fr 1fr!important}} .shop-card:hover{box-shadow:0 8px 28px rgba(67,97,238,.15)!important;transform:translateY(-2px)!important}`}</style>
+
+      {/* Header */}
+      <div style={{background:"#fff",borderBottom:`1px solid ${S.bdr}`,padding:"12px 16px",position:"sticky",top:0,zIndex:200,boxShadow:"0 2px 10px rgba(0,0,0,.06)"}}>
+        <div style={{maxWidth:1100,margin:"0 auto",display:"flex",alignItems:"center",gap:10}}>
+          <div style={{display:"flex",alignItems:"center",gap:8,flex:1,minWidth:0}}>
+            {companyLogo
+              ? <img src={companyLogo} alt="" style={{width:36,height:36,borderRadius:10,objectFit:"contain",border:`1px solid ${S.bdr}`}}/>
+              : <div style={{width:36,height:36,borderRadius:10,background:"linear-gradient(135deg,#4361ee,#7c3aed)",display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0}}><Package size={17} color="#fff"/></div>
+            }
+            <div style={{minWidth:0}}>
+              <div style={{fontSize:15,fontWeight:800,letterSpacing:-.3,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{co.name||"Our Collection"}</div>
+              <div style={{fontSize:10,color:S.txt3}}>Browse & Order</div>
+            </div>
           </div>
-          <div style={{display:"flex",background:S.bg,borderRadius:10,padding:3,gap:2}}>
-            {[{id:"inventory",label:"Inventory",ic:<Package size={14}/>},{id:"customers",label:"Customers",ic:<Users size={14}/>},{id:"challans",label:"Challans",ic:<FileText size={14}/>}].map(t =>
-              <button key={t.id} onClick={() => setTab(t.id)} style={{display:"flex",alignItems:"center",gap:5,padding:"7px 12px",borderRadius:8,border:"none",background:tab===t.id?S.card:"transparent",color:tab===t.id?S.acc:S.txt2,fontFamily:S.f,fontSize:11,fontWeight:tab===t.id?700:500,cursor:"pointer",boxShadow:tab===t.id?"0 1px 3px rgba(0,0,0,.08)":"none"}}>{t.ic}<span>{t.label}</span></button>
-            )}
+          <div style={{display:"flex",gap:6,alignItems:"center"}}>
+            <button onClick={()=>setShowCallback(true)} style={{display:"flex",alignItems:"center",gap:5,padding:"8px 12px",borderRadius:10,border:`1px solid ${S.bdr}`,background:"#fff",color:S.txt2,fontSize:12,fontWeight:600,fontFamily:S.f,cursor:"pointer",whiteSpace:"nowrap"}}>
+              <PhoneCall size={14}/><span style={{display:"none"}} className="tab-label">Call Me</span><span>Callback</span>
+            </button>
+            <button onClick={()=>setShowCart(true)} style={{position:"relative",background:"linear-gradient(135deg,#4361ee,#7c3aed)",border:"none",borderRadius:10,padding:"8px 14px",cursor:"pointer",display:"flex",alignItems:"center",gap:6,color:"#fff",fontSize:13,fontWeight:700,fontFamily:S.f}}>
+              <ShoppingCart size={16}/>
+              {cartQty > 0 ? <span style={{background:"#fff",color:S.acc,borderRadius:20,fontSize:10,fontWeight:800,padding:"1px 7px"}}>{cartQty}</span> : "Cart"}
+            </button>
           </div>
         </div>
       </div>
 
-      <div style={{padding:16,maxWidth:1100,margin:"0 auto"}}>
+      <div style={{maxWidth:1100,margin:"0 auto",padding:"16px 12px"}}>
+
+        {/* Search + Category filter */}
+        <div style={{display:"flex",gap:8,marginBottom:16,flexWrap:"wrap"}}>
+          <div style={{flex:1,minWidth:160}}><Inp icon={<Search size={14}/>} placeholder="Search products..." value={shopSearch} onChange={e=>setShopSearch(e.target.value)}/></div>
+          <Sel options={["All",...cats]} value={shopCat} onChange={e=>setShopCat(e.target.value)}/>
+        </div>
+
+        {/* Order success banner */}
+        {orderPlaced && (
+          <div style={{background:S.grnL,border:`1px solid ${S.grn}30`,borderRadius:12,padding:"14px 18px",marginBottom:16,display:"flex",alignItems:"center",gap:10}}>
+            <CheckCircle size={20} color={S.grn}/>
+            <div><div style={{fontWeight:700,color:S.grn,fontSize:14}}>Order Placed! 🎉</div><div style={{fontSize:12,color:S.txt2,marginTop:2}}>We'll contact you shortly to confirm your order.</div></div>
+          </div>
+        )}
+
+        {/* Callback success banner */}
+        {callbackSent && (
+          <div style={{background:S.accL,border:`1px solid ${S.acc}30`,borderRadius:12,padding:"14px 18px",marginBottom:16,display:"flex",alignItems:"center",gap:10}}>
+            <PhoneCall size={20} color={S.acc}/>
+            <div><div style={{fontWeight:700,color:S.acc,fontSize:14}}>Callback Requested! 📞</div><div style={{fontSize:12,color:S.txt2,marginTop:2}}>We'll call you back shortly.</div></div>
+          </div>
+        )}
+
+        {shopArticles.length === 0 ? (
+          <div style={{textAlign:"center",padding:"60px 20px",color:S.txt2}}>
+            <Package size={40} style={{margin:"0 auto 12px",display:"block",color:S.txt3}}/>
+            <div style={{fontSize:16,fontWeight:700}}>No products available</div>
+            <div style={{fontSize:13,marginTop:6}}>Check back soon for new arrivals!</div>
+          </div>
+        ) : (
+          /* Products grouped by category with banners */
+          (shopCat === "All" ? [...new Set(articles.filter(a=>artTot(a)>0).map(a=>a.category))] : [shopCat]).map(cat => {
+            const catArticles = shopArticles.filter(a => a.category === cat);
+            if (catArticles.length === 0) return null;
+            const banner = catBanners[cat];
+            return (
+              <div key={cat} style={{marginBottom:32}}>
+                {/* Category Banner */}
+                {banner ? (
+                  <div style={{borderRadius:14,overflow:"hidden",marginBottom:14,height:140,position:"relative"}}>
+                    <img src={banner} alt={cat} style={{width:"100%",height:"100%",objectFit:"cover"}}/>
+                    <div style={{position:"absolute",inset:0,background:"linear-gradient(to right,rgba(0,0,0,.55) 0%,transparent 60%)",display:"flex",alignItems:"center",padding:"0 20px"}}>
+                      <h2 style={{margin:0,color:"#fff",fontSize:22,fontWeight:800,textShadow:"0 2px 8px rgba(0,0,0,.3)"}}>{cat}</h2>
+                    </div>
+                  </div>
+                ) : (
+                  <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:12}}>
+                    <h2 style={{margin:0,fontSize:17,fontWeight:800}}>{cat}</h2>
+                    <div style={{flex:1,height:1,background:S.bdr}}/>
+                    <Tag color={S.pur}>{catArticles.length} styles</Tag>
+                  </div>
+                )}
+                <div className="shop-grid" style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(200px,1fr))",gap:14}}>
+                  {catArticles.map(a => (
+                    <ShopProductCard key={a.id} article={a} onAddToCart={addToCart} onViewDetail={(art, ci) => { setDetailArticle(art); setDetailColorIdx(ci); }}/>
+                  ))}
+                </div>
+              </div>
+            );
+          })
+        )}
+
+        {/* Request Callback FAB */}
+        <div style={{position:"fixed",bottom:86,left:16,zIndex:300}}>
+          <button onClick={()=>setShowCallback(true)} style={{background:"#25D366",border:"none",borderRadius:50,padding:"11px 16px",cursor:"pointer",display:"flex",alignItems:"center",gap:7,color:"#fff",fontSize:13,fontWeight:700,fontFamily:S.f,boxShadow:"0 4px 16px rgba(37,211,102,.4)"}}>
+            <PhoneCall size={16}/> Request Callback
+          </button>
+        </div>
+      </div>
+
+      {/* Product Detail Modal */}
+      {detailArticle && (
+        <ProductDetailModal
+          article={detailArticle}
+          initialColorIdx={detailColorIdx}
+          onClose={()=>setDetailArticle(null)}
+          onAddToCart={(aid,ci,sz,price)=>{ addToCart(aid,ci,sz,price); }}
+        />
+      )}
+
+      {/* Callback Modal */}
+      {showCallback && (
+        <div style={{position:"fixed",inset:0,zIndex:600,background:"rgba(0,0,0,.45)",backdropFilter:"blur(4px)",display:"flex",alignItems:"flex-end",justifyContent:"center"}} onClick={()=>setShowCallback(false)}>
+          <div onClick={e=>e.stopPropagation()} style={{background:"#fff",borderRadius:"20px 20px 0 0",width:"100%",maxWidth:480,padding:24}}>
+            <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:20}}>
+              <div>
+                <div style={{fontSize:18,fontWeight:800}}>📞 Request a Callback</div>
+                <div style={{fontSize:12,color:S.txt2,marginTop:3}}>Leave your details and we'll call you back!</div>
+              </div>
+              <button onClick={()=>setShowCallback(false)} style={{background:S.bg,border:"none",borderRadius:8,padding:6,cursor:"pointer",display:"flex",color:S.txt2}}><X size={16}/></button>
+            </div>
+            {callbackSent ? (
+              <div style={{textAlign:"center",padding:"20px 0"}}>
+                <div style={{fontSize:36,marginBottom:8}}>✅</div>
+                <div style={{fontSize:16,fontWeight:700,color:S.grn}}>Request Sent!</div>
+                <div style={{fontSize:13,color:S.txt2,marginTop:4}}>We'll call you back shortly.</div>
+              </div>
+            ) : (
+              <div style={{display:"flex",flexDirection:"column",gap:10}}>
+                <Inp label="Your Name *" placeholder="Full name" value={callbackForm.name} onChange={e=>setCallbackForm({...callbackForm,name:e.target.value})}/>
+                <Inp label="Phone Number *" placeholder="+91 XXXXX XXXXX" icon={<Phone size={13}/>} value={callbackForm.phone} onChange={e=>setCallbackForm({...callbackForm,phone:e.target.value})}/>
+                <Inp label="Message (optional)" placeholder="e.g. Interested in Kurta sets, size M-L" value={callbackForm.msg} onChange={e=>setCallbackForm({...callbackForm,msg:e.target.value})}/>
+                <button onClick={submitCallback} disabled={!callbackForm.name||!callbackForm.phone} style={{marginTop:6,padding:"13px 0",borderRadius:12,border:"none",background:callbackForm.name&&callbackForm.phone?"linear-gradient(135deg,#4361ee,#7c3aed)":"#e5e7eb",color:"#fff",fontWeight:700,fontSize:14,fontFamily:S.f,cursor:callbackForm.name&&callbackForm.phone?"pointer":"not-allowed"}}>
+                  📞 Request Callback
+                </button>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* Cart Drawer */}
+      {showCart && (
+        <div style={{position:"fixed",inset:0,zIndex:500,display:"flex",justifyContent:"flex-end"}} onClick={()=>setShowCart(false)}>
+          <div onClick={e=>e.stopPropagation()} style={{width:"min(420px,100vw)",height:"100%",background:"#fff",boxShadow:"-8px 0 40px rgba(0,0,0,.15)",display:"flex",flexDirection:"column"}}>
+            <div style={{padding:"16px 18px",borderBottom:`1px solid ${S.bdr}`,display:"flex",alignItems:"center",justifyContent:"space-between",flexShrink:0}}>
+              <div style={{fontWeight:800,fontSize:16,display:"flex",alignItems:"center",gap:8}}><ShoppingCart size={18} color={S.acc}/> Your Cart {cartQty>0&&<Tag color={S.acc}>{cartQty} items</Tag>}</div>
+              <button onClick={()=>setShowCart(false)} style={{background:S.bg,border:"none",borderRadius:8,padding:6,cursor:"pointer",display:"flex",color:S.txt2}}><X size={16}/></button>
+            </div>
+            <div style={{flex:1,padding:"14px 18px",overflowY:"auto"}}>
+              {cart.length===0 ? (
+                <div style={{textAlign:"center",padding:"40px 20px",color:S.txt3}}><ShoppingCart size={36} style={{margin:"0 auto 10px",display:"block"}}/><div style={{fontSize:14}}>Your cart is empty</div></div>
+              ) : (
+                <div style={{display:"flex",flexDirection:"column",gap:10}}>
+                  {cart.map((item,i) => {
+                    const art = articles.find(a=>a.id===item.articleId), col = art?.colors[item.colorIdx];
+                    return (
+                      <div key={i} style={{background:S.bg,borderRadius:12,padding:12,border:`1px solid ${S.bdr}`,display:"flex",gap:10,alignItems:"center"}}>
+                        {col?.image && <img src={col.image} alt="" style={{width:52,height:52,borderRadius:8,objectFit:"cover",flexShrink:0}}/>}
+                        <div style={{flex:1,minWidth:0}}>
+                          <div style={{fontSize:13,fontWeight:700}}>{art?.name}</div>
+                          <div style={{fontSize:11,color:S.txt2}}>{col?.name} · Size {item.size}</div>
+                          <div style={{fontSize:12,fontWeight:700,color:S.grn,marginTop:2}}>{fmtS(item.price*item.qty)} <span style={{fontWeight:400,color:S.txt3}}>× {item.qty}</span></div>
+                        </div>
+                        <button onClick={()=>removeFromCart(item.articleId,item.colorIdx,item.size)} style={{background:S.redL,border:"none",borderRadius:6,padding:4,cursor:"pointer",display:"flex",color:S.red,flexShrink:0}}><X size={13}/></button>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+            {cart.length>0 && (
+              <div style={{padding:"14px 18px",borderTop:`1px solid ${S.bdr}`,background:"#fff",flexShrink:0}}>
+                <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:14}}>
+                  <span style={{fontWeight:700,fontSize:14}}>Total</span>
+                  <span style={{fontWeight:800,fontSize:18,color:S.grn,fontFamily:S.fm}}>{fmtR(cartTotal)}</span>
+                </div>
+                <div style={{display:"flex",flexDirection:"column",gap:8,marginBottom:12}}>
+                  <Inp label="Your Name *" placeholder="Full name" value={orderForm.name} onChange={e=>setOrderForm({...orderForm,name:e.target.value})}/>
+                  <Inp label="Phone *" placeholder="+91..." icon={<Phone size={13}/>} value={orderForm.phone} onChange={e=>setOrderForm({...orderForm,phone:e.target.value})}/>
+                  <Inp label="Note (optional)" placeholder="Special instructions..." value={orderForm.note} onChange={e=>setOrderForm({...orderForm,note:e.target.value})}/>
+                </div>
+                <button onClick={placeOrder} disabled={!orderForm.name||!orderForm.phone} style={{width:"100%",padding:"13px 0",borderRadius:12,border:"none",background:orderForm.name&&orderForm.phone?"linear-gradient(135deg,#4361ee,#7c3aed)":"#d1d5db",color:"#fff",fontWeight:700,fontSize:14,fontFamily:S.f,cursor:orderForm.name&&orderForm.phone?"pointer":"not-allowed"}}>
+                  Place Order 🎉
+                </button>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
+      <ChatBot articles={articles} co={co} chatMsgs={chatMsgs} setChatMsgs={setChatMsgs} chatOpen={chatOpen} setChatOpen={setChatOpen} chatInput={chatInput} setChatInput={setChatInput} chatLoading={chatLoading} setChatLoading={setChatLoading} chatEndRef={chatEndRef} chatInputRef={chatInputRef} buildSystemPrompt={buildSystemPrompt}/>
+    </div>
+  );}
+
+
+  return (
+    <div style={{minHeight:"100vh",fontFamily:S.f,background:S.bg,color:S.txt}}>
+      <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700;800;900&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet"/>
+      <style>{`
+        *{box-sizing:border-box}
+        input[type=number]::-webkit-inner-spin-button,input[type=number]::-webkit-outer-spin-button{-webkit-appearance:none}
+        input[type=number]{-moz-appearance:textfield}
+        @keyframes spin{to{transform:rotate(360deg)}}
+        @media(max-width:600px){
+          .stat-grid{grid-template-columns:1fr 1fr!important}
+          .hide-mob{display:none!important}
+          .form-grid2{grid-template-columns:1fr!important}
+          .ch-header-right{flex-direction:column!important;align-items:flex-end!important}
+          .tab-label{display:none}
+        }
+      `}</style>
+
+      {/* HEADER */}
+      <div style={{background:S.card,borderBottom:`1px solid ${S.bdr}`,padding:"10px 14px",position:"sticky",top:0,zIndex:100}}>
+        <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",maxWidth:1100,margin:"0 auto",gap:8,flexWrap:"wrap"}}>
+          <div style={{display:"flex",alignItems:"center",gap:8}}>
+            <div style={{width:34,height:34,borderRadius:10,background:"linear-gradient(135deg,#4361ee,#7c3aed)",display:"flex",alignItems:"center",justifyContent:"center",color:"#fff",flexShrink:0}}><Package size={18}/></div>
+            <h1 style={{margin:0,fontSize:15,fontWeight:800,letterSpacing:-.3,whiteSpace:"nowrap"}}>InvenTrack</h1>
+          </div>
+          <div style={{display:"flex",background:S.bg,borderRadius:10,padding:3,gap:2}}>
+            {[{id:"inventory",label:"Inventory",ic:<Package size={14}/>},{id:"customers",label:"Customers",ic:<Users size={14}/>},{id:"challans",label:"Challans",ic:<FileText size={14}/>},{id:"orders",label:"Orders",ic:<ClipboardList size={14}/>,badge:orders.filter(o=>o.status==="pending").length}].map(t =>
+              <button key={t.id} onClick={() => setTab(t.id)} style={{position:"relative",display:"flex",alignItems:"center",gap:5,padding:"7px 10px",borderRadius:8,border:"none",background:tab===t.id?S.card:"transparent",color:tab===t.id?S.acc:S.txt2,fontFamily:S.f,fontSize:11,fontWeight:tab===t.id?700:500,cursor:"pointer",boxShadow:tab===t.id?"0 1px 3px rgba(0,0,0,.08)":"none"}}>
+                {t.ic}<span className="tab-label">{t.label}</span>
+                {t.badge > 0 && <span style={{position:"absolute",top:2,right:2,background:S.red,color:"#fff",borderRadius:20,fontSize:9,fontWeight:800,padding:"0 4px",minWidth:14,textAlign:"center",lineHeight:"14px"}}>{t.badge}</span>}
+              </button>
+            )}
+          </div>
+          <div style={{display:"flex",gap:6,alignItems:"center"}}>
+            {/* Sync status indicator */}
+            <div title={dbStatus === "synced" ? "Synced to cloud" : dbStatus === "saving" ? "Saving…" : dbStatus === "loading" ? "Loading…" : "Sync error — check connection"} style={{display:"flex",alignItems:"center",gap:4,padding:"5px 8px",borderRadius:8,background:dbStatus==="synced"?S.grnL:dbStatus==="error"?S.redL:S.ambL,border:`1px solid ${dbStatus==="synced"?S.grn+"30":dbStatus==="error"?S.red+"30":S.amb+"30"}`}}>
+              {dbStatus==="synced" && <><Wifi size={12} color={S.grn}/><span style={{fontSize:10,fontWeight:700,color:S.grn}} className="tab-label">Synced</span></>}
+              {dbStatus==="saving" && <><RefreshCw size={12} color={S.amb} style={{animation:"spin 1s linear infinite"}}/><span style={{fontSize:10,fontWeight:700,color:S.amb}} className="tab-label">Saving…</span></>}
+              {dbStatus==="loading" && <><RefreshCw size={12} color={S.amb} style={{animation:"spin 1s linear infinite"}}/><span style={{fontSize:10,fontWeight:700,color:S.amb}} className="tab-label">Loading…</span></>}
+              {dbStatus==="error" && <><WifiOff size={12} color={S.red}/><button onClick={loadFromDB} style={{background:"none",border:"none",fontSize:10,fontWeight:700,color:S.red,cursor:"pointer",fontFamily:S.f,padding:0}} className="tab-label">Retry</button></>}
+            </div>
+            <button onClick={shareLink} style={{display:"flex",alignItems:"center",gap:5,padding:"7px 12px",borderRadius:8,border:`1px solid ${S.bdr}`,background:linkCopied?S.grnL:S.card,color:linkCopied?S.grn:S.txt2,fontFamily:S.f,fontSize:11,fontWeight:600,cursor:"pointer",whiteSpace:"nowrap",transition:"all .2s"}}>
+              {linkCopied?<><Check size={13}/>Copied!</>:<><ExternalLink size={13}/><span className="tab-label">Share Shop</span></>}
+            </button>
+            <button onClick={() => setShowBackup(true)} title="Backup & Restore" style={{padding:"7px 10px",borderRadius:8,border:`1px solid ${S.bdr}`,background:S.card,color:S.txt2,cursor:"pointer",display:"flex",alignItems:"center",gap:5,fontFamily:S.f,fontSize:11,fontWeight:600}}>
+              <DatabaseBackup size={15}/><span className="tab-label">Backup</span>
+            </button>
+            <button onClick={() => setShowCompany(true)} title="Company Settings" style={{padding:"7px 10px",borderRadius:8,border:`1px solid ${S.bdr}`,background:S.card,color:S.txt2,cursor:"pointer",display:"flex",alignItems:"center",gap:5,fontFamily:S.f,fontSize:11,fontWeight:600}}>
+              <Building size={15}/><span className="tab-label">Company</span>
+            </button>
+            <button onClick={() => setIsLocked(true)} title="Lock" style={{padding:7,borderRadius:8,border:`1px solid ${S.bdr}`,background:S.card,color:S.txt2,cursor:"pointer",display:"flex"}}><Lock size={15}/></button>
+          </div>
+        </div>
+      </div>
+
+      <div style={{padding:"14px 12px",maxWidth:1100,margin:"0 auto"}}>
 
       {/* ═══ INVENTORY TAB ═══ */}
       {tab === "inventory" && <>
-        <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:16,flexWrap:"wrap",gap:8}}>
-          <h2 style={{margin:0,fontSize:18,fontWeight:800}}>Inventory</h2>
-          <div style={{display:"flex",gap:8}}><Btn v="secondary" sz="sm" icon={<Settings size={13}/>} onClick={() => setShowCats(true)}>Categories</Btn><Btn sz="sm" icon={<Plus size={14}/>} onClick={openAddArt}>New Article</Btn></div>
+        <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:14,flexWrap:"wrap",gap:8}}>
+          <h2 style={{margin:0,fontSize:17,fontWeight:800}}>Inventory</h2>
+          <div style={{display:"flex",gap:6}}><Btn v="secondary" sz="sm" icon={<ImageIcon size={13}/>} onClick={() => setShowCatBanners(true)}>Shop Banners</Btn><Btn v="secondary" sz="sm" icon={<Settings size={13}/>} onClick={() => setShowCats(true)}>Categories</Btn><Btn sz="sm" icon={<Plus size={14}/>} onClick={openAddArt}>New Article</Btn></div>
         </div>
-        <div className="stat-grid" style={{display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:10,marginBottom:18}}>
+        <div className="stat-grid" style={{display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:8,marginBottom:14}}>
           <Stat icon={<Package size={16}/>} label="Articles" value={articles.length} color={S.acc}/>
           <Stat icon={<Palette size={16}/>} label="Colors" value={totalCols} color={S.pur}/>
           <Stat icon={<Grid3X3 size={16}/>} label="Total Pcs" value={totalPcs.toLocaleString()} color={S.grn}/>
           <Stat icon={<AlertTriangle size={16}/>} label="Low Stock" value={lowStock} color={S.amb}/>
         </div>
-        <div style={{display:"flex",gap:10,marginBottom:16,flexWrap:"wrap"}}>
-          <div style={{flex:1,minWidth:180}}><Inp icon={<Search size={14}/>} placeholder="Search name or SKU..." value={search} onChange={e => setSearch(e.target.value)}/></div>
+        <div style={{display:"flex",gap:8,marginBottom:14,flexWrap:"wrap"}}>
+          <div style={{flex:1,minWidth:160}}><Inp icon={<Search size={14}/>} placeholder="Search name or SKU..." value={search} onChange={e => setSearch(e.target.value)}/></div>
           <Sel options={["All",...cats]} value={fCat} onChange={e => setFCat(e.target.value)}/>
         </div>
 
         {filteredArt.length === 0 ? (
-          <div style={{display:"flex",flexDirection:"column",alignItems:"center",padding:"60px 20px",textAlign:"center"}}>
-            <div style={{width:60,height:60,borderRadius:16,background:S.accL,display:"flex",alignItems:"center",justifyContent:"center",marginBottom:14,color:S.acc}}><Package size={28}/></div>
-            <h3 style={{margin:0,fontSize:16,fontWeight:700}}>No articles found</h3>
-            <p style={{margin:"6px 0 18px",fontSize:13,color:S.txt2}}>Add your first article to get started</p>
+          <div style={{display:"flex",flexDirection:"column",alignItems:"center",padding:"50px 20px",textAlign:"center"}}>
+            <div style={{width:56,height:56,borderRadius:16,background:S.accL,display:"flex",alignItems:"center",justifyContent:"center",marginBottom:12,color:S.acc}}><Package size={26}/></div>
+            <h3 style={{margin:0,fontSize:15,fontWeight:700}}>No articles found</h3>
+            <p style={{margin:"5px 0 16px",fontSize:13,color:S.txt2}}>Add your first article to get started</p>
             <Btn icon={<Plus size={14}/>} onClick={openAddArt}>Add Article</Btn>
           </div>
         ) : (
@@ -324,39 +1525,39 @@ export default function App() {
               const tot = artTot(a), exp = expanded === a.id;
               return (
                 <div key={a.id}>
-                  <div onClick={() => setExpanded(exp ? null : a.id)} style={{display:"flex",alignItems:"center",justifyContent:"space-between",padding:"12px 14px",background:S.card,borderRadius:exp?"10px 10px 0 0":10,border:`1px solid ${exp?S.bdrD:S.bdr}`,borderBottom:exp?"none":undefined,cursor:"pointer",flexWrap:"wrap",gap:8}}>
-                    <div style={{display:"flex",alignItems:"center",gap:10,flex:1,minWidth:0}}>
+                  <div onClick={() => setExpanded(exp ? null : a.id)} style={{display:"flex",alignItems:"center",justifyContent:"space-between",padding:"11px 13px",background:S.card,borderRadius:exp?"10px 10px 0 0":10,border:`1px solid ${exp?S.bdrD:S.bdr}`,borderBottom:exp?"none":undefined,cursor:"pointer",gap:8}}>
+                    <div style={{display:"flex",alignItems:"center",gap:8,flex:1,minWidth:0}}>
                       <ChevronRight size={14} style={{color:S.txt3,transform:exp?"rotate(90deg)":"none",transition:"transform .2s",flexShrink:0}}/>
                       <div style={{minWidth:0}}>
-                        <div style={{fontSize:13,fontWeight:700}}>{a.name} <span className="hide-mob" style={{fontSize:11,color:S.txt3,fontFamily:S.fm,marginLeft:6}}>{a.skuId}</span></div>
-                        <div style={{display:"flex",gap:4,marginTop:4,flexWrap:"wrap"}}>{a.colors.map((c,i) => <ColorDot key={i} name={c.name}/>)}</div>
+                        <div style={{fontSize:13,fontWeight:700}}>{a.name} <span className="hide-mob" style={{fontSize:11,color:S.txt3,fontFamily:S.fm,marginLeft:4}}>{a.skuId}</span></div>
+                        <div style={{display:"flex",gap:3,marginTop:3,flexWrap:"wrap"}}>{a.colors.map((c,i) => <ColorDot key={i} name={c.name}/>)}</div>
                       </div>
                     </div>
-                    <div style={{display:"flex",alignItems:"center",gap:10}}>
+                    <div style={{display:"flex",alignItems:"center",gap:8}}>
                       <span className="hide-mob"><Tag color={S.pur}>{a.category}</Tag></span>
-                      <span style={{fontSize:15,fontWeight:800,color:tot===0?S.red:S.grn}}>{tot}<span style={{fontSize:10,color:S.txt3,marginLeft:2}}>pcs</span></span>
-                      <div style={{display:"flex",gap:4}} onClick={e => e.stopPropagation()}>
+                      <span style={{fontSize:14,fontWeight:800,color:tot===0?S.red:S.grn}}>{tot}<span style={{fontSize:10,color:S.txt3,marginLeft:2}}>pcs</span></span>
+                      <div style={{display:"flex",gap:3}} onClick={e => e.stopPropagation()}>
                         <button onClick={() => openEditArt(a)} style={{background:S.accL,border:"none",borderRadius:6,padding:5,cursor:"pointer",display:"flex",color:S.acc}}><Edit3 size={13}/></button>
                         <button onClick={() => delArt(a.id)} style={{background:S.redL,border:"none",borderRadius:6,padding:5,cursor:"pointer",display:"flex",color:S.red}}><Trash2 size={13}/></button>
                       </div>
                     </div>
                   </div>
                   {exp && (
-                    <div style={{background:S.card,borderRadius:"0 0 10px 10px",border:`1px solid ${S.bdrD}`,borderTop:`1px dashed ${S.bdr}`,padding:16,overflowX:"auto"}}>
+                    <div style={{background:S.card,borderRadius:"0 0 10px 10px",border:`1px solid ${S.bdrD}`,borderTop:`1px dashed ${S.bdr}`,padding:14,overflowX:"auto"}}>
                       {a.colors.map((c,ci) => {
                         const cT = Object.values(c.sizes).reduce((s,v) => s + (v.qty||0), 0);
                         return (
-                          <div key={ci} style={{background:S.bg,borderRadius:10,padding:14,border:`1px solid ${S.bdr}`,marginBottom:ci < a.colors.length-1 ? 10 : 0}}>
-                            <div style={{display:"flex",alignItems:"center",gap:12,marginBottom:12}}>
-                              {c.image && <img src={c.image} alt="" style={{width:48,height:48,borderRadius:8,objectFit:"cover"}}/>}
+                          <div key={ci} style={{background:S.bg,borderRadius:10,padding:12,border:`1px solid ${S.bdr}`,marginBottom:ci < a.colors.length-1 ? 8 : 0}}>
+                            <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:10}}>
+                              {c.image && <img src={c.image} alt="" style={{width:44,height:44,borderRadius:8,objectFit:"cover"}}/>}
                               <ColorDot name={c.name}/>
                               <span style={{marginLeft:"auto",fontSize:13,fontWeight:700,color:S.acc}}>{cT} pcs</span>
                             </div>
-                            <div style={{display:"flex",gap:8,flexWrap:"wrap"}}>
+                            <div style={{display:"flex",gap:7,flexWrap:"wrap"}}>
                               {a.selectedSizes.map(sz => {
                                 const q = c.sizes[sz]?.qty || 0, p = c.sizes[sz]?.price || 0;
                                 return (
-                                  <div key={sz} style={{textAlign:"center",minWidth:56}}>
+                                  <div key={sz} style={{textAlign:"center",minWidth:54}}>
                                     <div style={{fontSize:10,fontWeight:700,color:S.txt3}}>{sz}</div>
                                     <div style={{fontSize:14,fontWeight:700,fontFamily:S.fm,color:q===0?S.txt3:q<=5?S.amb:S.txt,background:q<=5&&q>0?S.ambL:"transparent",borderRadius:6,padding:"2px 6px"}}>{q}</div>
                                     <div style={{fontSize:10,color:p?S.grn:S.txt3,fontFamily:S.fm}}>{p ? fmtS(p) : "—"}</div>
@@ -378,11 +1579,11 @@ export default function App() {
 
       {/* ═══ CUSTOMERS TAB ═══ */}
       {tab === "customers" && <>
-        <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:16,flexWrap:"wrap",gap:8}}>
-          <h2 style={{margin:0,fontSize:18,fontWeight:800}}>Customers</h2>
-          <div style={{display:"flex",gap:8}}><Btn v="secondary" sz="sm" icon={<Share2 size={13}/>} onClick={() => setShowCustForm(true)}>Form</Btn><Btn sz="sm" icon={<Plus size={14}/>} onClick={openAddCust}>Add</Btn></div>
+        <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:14,flexWrap:"wrap",gap:8}}>
+          <h2 style={{margin:0,fontSize:17,fontWeight:800}}>Customers</h2>
+          <div style={{display:"flex",gap:6}}><Btn v="secondary" sz="sm" icon={<ExternalLink size={13}/>} onClick={() => setShowCustForm(true)}>Form</Btn><Btn sz="sm" icon={<Plus size={14}/>} onClick={openAddCust}>Add</Btn></div>
         </div>
-        <div className="stat-grid" style={{display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:10,marginBottom:18}}>
+        <div className="stat-grid" style={{display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:8,marginBottom:14}}>
           <Stat icon={<Users size={16}/>} label="Customers" value={customers.length} color={S.acc}/>
           <Stat icon={<Cake size={16}/>} label="Birthdays" value={upBdays.length} color={S.pnk}/>
           <Stat icon={<Building size={16}/>} label="Companies" value={customers.filter(c => c.company).length} color={S.pur}/>
@@ -390,19 +1591,37 @@ export default function App() {
         </div>
 
         {upBdays.length > 0 && (
-          <div style={{background:S.card,borderRadius:12,padding:"14px 18px",marginBottom:16,border:`1px solid ${S.bdr}`}}>
-            <div style={{fontSize:10,fontWeight:700,color:S.pnk,textTransform:"uppercase",letterSpacing:.8,marginBottom:10,display:"flex",alignItems:"center",gap:6}}><Cake size={14}/> Upcoming Birthdays</div>
-            <div style={{display:"flex",gap:10,flexWrap:"wrap"}}>{upBdays.map(c => { const a = av(c.name); return <div key={c.id} style={{background:S.pnkL,borderRadius:10,padding:"10px 14px",display:"flex",alignItems:"center",gap:10,minWidth:180}}><div style={{width:34,height:34,borderRadius:"50%",background:a.bg,color:a.color,display:"flex",alignItems:"center",justifyContent:"center",fontSize:14,fontWeight:700}}>{c.name.charAt(0)}</div><div><div style={{fontSize:12,fontWeight:700}}>{c.name}</div><div style={{fontSize:10,color:S.txt2}}>{fmtD(c.nextBday)} · <span style={{color:S.pnk,fontWeight:600}}>{c.daysUntil}d</span></div></div></div>; })}</div>
+          <div style={{background:S.card,borderRadius:12,padding:"12px 16px",marginBottom:14,border:`1px solid ${S.bdr}`}}>
+            <div style={{fontSize:10,fontWeight:700,color:S.pnk,textTransform:"uppercase",letterSpacing:.8,marginBottom:8,display:"flex",alignItems:"center",gap:6}}><Cake size={14}/> Upcoming Birthdays</div>
+            <div style={{display:"flex",gap:8,flexWrap:"wrap"}}>
+              {upBdays.map(c => {
+                const a = av(c.name);
+                return (
+                  <div key={c.id} style={{background:S.pnkL,borderRadius:12,padding:"10px 12px",display:"flex",alignItems:"center",gap:10,minWidth:200,maxWidth:280,border:`1px solid ${S.pnk}20`}}>
+                    <div style={{width:34,height:34,borderRadius:"50%",background:a.bg,color:a.color,display:"flex",alignItems:"center",justifyContent:"center",fontSize:14,fontWeight:700,flexShrink:0}}>{c.name.charAt(0)}</div>
+                    <div style={{flex:1,minWidth:0}}>
+                      <div style={{fontSize:12,fontWeight:700}}>{c.name}</div>
+                      <div style={{fontSize:10,color:S.txt2}}>{fmtD(c.nextBday)} · <span style={{color:S.pnk,fontWeight:600}}>{c.daysUntil === 0 ? "🎂 Today!" : `${c.daysUntil}d away`}</span></div>
+                    </div>
+                    {(c.whatsapp || c.phone) && (
+                      <a href={waLink(c.whatsapp||c.phone, birthdayWAMsg(c))} target="_blank" rel="noreferrer" onClick={e=>e.stopPropagation()} title="Send Birthday Wish on WhatsApp" style={{background:"#25D366",border:"none",borderRadius:8,padding:"6px 8px",cursor:"pointer",display:"flex",alignItems:"center",gap:4,color:"#fff",textDecoration:"none",fontSize:10,fontWeight:700,fontFamily:S.f,flexShrink:0}}>
+                        <MessageSquare size={12}/>WA
+                      </a>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
           </div>
         )}
 
-        <div style={{marginBottom:16}}><Inp icon={<Search size={14}/>} placeholder="Search name, phone, company..." value={cSearch} onChange={e => setCSearch(e.target.value)}/></div>
+        <div style={{marginBottom:14}}><Inp icon={<Search size={14}/>} placeholder="Search name, phone, company..." value={cSearch} onChange={e => setCSearch(e.target.value)}/></div>
 
         {filteredCust.length === 0 ? (
-          <div style={{display:"flex",flexDirection:"column",alignItems:"center",padding:"60px 20px",textAlign:"center"}}>
-            <div style={{width:60,height:60,borderRadius:16,background:S.accL,display:"flex",alignItems:"center",justifyContent:"center",marginBottom:14,color:S.acc}}><Users size={28}/></div>
-            <h3 style={{margin:0,fontSize:16,fontWeight:700}}>No customers</h3>
-            <p style={{margin:"6px 0 18px",fontSize:13,color:S.txt2}}>Add customers or share the registration form</p>
+          <div style={{display:"flex",flexDirection:"column",alignItems:"center",padding:"50px 20px",textAlign:"center"}}>
+            <div style={{width:56,height:56,borderRadius:16,background:S.accL,display:"flex",alignItems:"center",justifyContent:"center",marginBottom:12,color:S.acc}}><Users size={26}/></div>
+            <h3 style={{margin:0,fontSize:15,fontWeight:700}}>No customers</h3>
+            <p style={{margin:"5px 0 16px",fontSize:13,color:S.txt2}}>Add customers or share the registration form</p>
             <Btn icon={<Plus size={14}/>} onClick={openAddCust}>Add Customer</Btn>
           </div>
         ) : (
@@ -410,29 +1629,82 @@ export default function App() {
             const a = av(c.name), isE = expandedCust === c.id;
             return (
               <div key={c.id}>
-                <div onClick={() => setExpandedCust(isE ? null : c.id)} style={{display:"flex",alignItems:"center",justifyContent:"space-between",padding:"12px 14px",background:S.card,borderRadius:isE?"10px 10px 0 0":10,border:`1px solid ${isE?S.bdrD:S.bdr}`,borderBottom:isE?"none":undefined,cursor:"pointer",gap:10}}>
-                  <div style={{display:"flex",alignItems:"center",gap:10,flex:1,minWidth:0}}>
-                    <div style={{width:38,height:38,borderRadius:"50%",background:a.bg,color:a.color,display:"flex",alignItems:"center",justifyContent:"center",fontSize:15,fontWeight:700,flexShrink:0}}>{c.name.charAt(0)}</div>
+                <div onClick={() => setExpandedCust(isE ? null : c.id)} style={{display:"flex",alignItems:"center",justifyContent:"space-between",padding:"11px 13px",background:S.card,borderRadius:isE?"10px 10px 0 0":10,border:`1px solid ${isE?S.bdrD:S.bdr}`,borderBottom:isE?"none":undefined,cursor:"pointer",gap:8}}>
+                  <div style={{display:"flex",alignItems:"center",gap:8,flex:1,minWidth:0}}>
+                    <div style={{width:36,height:36,borderRadius:"50%",background:a.bg,color:a.color,display:"flex",alignItems:"center",justifyContent:"center",fontSize:14,fontWeight:700,flexShrink:0}}>{c.name.charAt(0)}</div>
                     <div style={{minWidth:0}}><div style={{fontSize:13,fontWeight:700}}>{c.name}</div><div style={{fontSize:11,color:S.txt2}}>{c.phone}{c.company ? ` · ${c.company}` : ""}</div></div>
                   </div>
                   <div style={{display:"flex",alignItems:"center",gap:6}}>
                     <span className="hide-mob" style={{fontSize:12,color:S.txt2}}>{c.city||""}</span>
-                    <div style={{display:"flex",gap:4}} onClick={e => e.stopPropagation()}>
+                    <div style={{display:"flex",gap:3}} onClick={e => e.stopPropagation()}>
                       <button onClick={() => openEditCust(c)} style={{background:S.accL,border:"none",borderRadius:6,padding:5,cursor:"pointer",display:"flex",color:S.acc}}><Edit3 size={13}/></button>
                       <button onClick={() => delCust(c.id)} style={{background:S.redL,border:"none",borderRadius:6,padding:5,cursor:"pointer",display:"flex",color:S.red}}><Trash2 size={13}/></button>
                     </div>
                   </div>
                 </div>
                 {isE && (
-                  <div style={{background:S.card,borderRadius:"0 0 10px 10px",border:`1px solid ${S.bdrD}`,borderTop:`1px dashed ${S.bdr}`,padding:18}}>
-                    <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(170px,1fr))",gap:10}}>
-                      {[{l:"Phone",v:c.phone},{l:"WhatsApp",v:c.whatsapp||"—"},{l:"Email",v:c.email||"—"},{l:"DOB",v:c.dob?fmtD(c.dob):"—"},{l:"Address",v:c.address?`${c.address}, ${c.city}, ${c.state} - ${c.pincode}`:"—"},{l:"Company",v:c.company||"—"},{l:"GST",v:c.gst||"—"},{l:"Agent",v:c.agent||"—"},{l:"Transport",v:c.transport||"—"}].map((x,i) => (
+                  <div style={{background:S.card,borderRadius:"0 0 10px 10px",border:`1px solid ${S.bdrD}`,borderTop:`1px dashed ${S.bdr}`,padding:16}}>
+                    {/* Details grid */}
+                    <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(150px,1fr))",gap:8,marginBottom:14}}>
+                      {[{l:"Phone",v:c.phone,link:`tel:${c.phone}`},{l:"WhatsApp",v:c.whatsapp||"—",link:c.whatsapp?waLink(c.whatsapp,"Hello!"):"#"},{l:"Email",v:c.email||"—"},{l:"DOB",v:c.dob?fmtD(c.dob):"—"},{l:"Address",v:c.address?`${c.address}, ${c.city}, ${c.state} - ${c.pincode}`:"—"},{l:"Company",v:c.company||"—"},{l:"GST",v:c.gst||"—"},{l:"Agent",v:c.agent||"—"},{l:"Transport",v:c.transport||"—"}].map((x,i) => (
                         <div key={i} style={{padding:"8px 10px",background:S.bg,borderRadius:8}}>
                           <div style={{fontSize:9,fontWeight:700,color:S.txt3,textTransform:"uppercase",letterSpacing:.8}}>{x.l}</div>
-                          <div style={{fontSize:12,fontWeight:600,marginTop:2}}>{x.v}</div>
+                          {x.link && x.v !== "—" ? <a href={x.link} target="_blank" rel="noreferrer" style={{fontSize:12,fontWeight:600,marginTop:2,color:S.acc,display:"block",textDecoration:"none"}}>{x.v}</a> : <div style={{fontSize:12,fontWeight:600,marginTop:2}}>{x.v}</div>}
                         </div>
                       ))}
                     </div>
+                    {/* Purchase History */}
+                    {(() => {
+                      const hist = custPurchaseHistory(c);
+                      const totSpend = hist.reduce((s,h)=>s+h.totalAmt,0);
+                      if (hist.length === 0) return (
+                        <div style={{background:S.bg,borderRadius:10,padding:"12px 14px",textAlign:"center",color:S.txt3,fontSize:12}}>
+                          <History size={18} style={{margin:"0 auto 6px",display:"block"}}/>No purchase history yet
+                        </div>
+                      );
+                      return (
+                        <div>
+                          <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:8}}>
+                            <div style={{fontSize:10,fontWeight:700,color:S.txt3,textTransform:"uppercase",letterSpacing:.8,display:"flex",alignItems:"center",gap:5}}><History size={12}/>Purchase History</div>
+                            <div style={{display:"flex",gap:12}}>
+                              <span style={{fontSize:11,color:S.txt2}}>{hist.length} transactions</span>
+                              <span style={{fontSize:11,fontWeight:700,color:S.grn}}>{fmtR(totSpend)} total</span>
+                            </div>
+                          </div>
+                          <div style={{display:"flex",flexDirection:"column",gap:6,maxHeight:280,overflowY:"auto"}}>
+                            {hist.map((h,hi) => (
+                              <div key={hi} style={{background:S.bg,borderRadius:10,padding:"10px 12px",border:`1px solid ${S.bdr}`}}>
+                                <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:4}}>
+                                  <div style={{display:"flex",alignItems:"center",gap:6}}>
+                                    <Tag color={h.type==="challan"?S.tea:S.grn}>{h.type==="challan"?"Challan":"Order"}</Tag>
+                                    <span style={{fontSize:12,fontWeight:700}}>{h.number}</span>
+                                  </div>
+                                  <span style={{fontSize:11,color:S.txt3}}>{fmtD(h.date)}</span>
+                                </div>
+                                <div style={{display:"flex",gap:8,flexWrap:"wrap",marginTop:4}}>
+                                  {h.items.slice(0,3).map((it,ii) => (
+                                    <span key={ii} style={{fontSize:11,color:S.txt2,background:S.card,padding:"2px 8px",borderRadius:6,border:`1px solid ${S.bdr}`}}>
+                                      {it.name} · {it.color}
+                                    </span>
+                                  ))}
+                                  {h.items.length > 3 && <span style={{fontSize:11,color:S.txt3}}>+{h.items.length-3} more</span>}
+                                </div>
+                                <div style={{display:"flex",gap:12,marginTop:6}}>
+                                  <span style={{fontSize:11,color:S.txt2}}>{h.totalQty} pcs</span>
+                                  <span style={{fontSize:12,fontWeight:700,color:S.grn}}>{fmtR(h.totalAmt)}</span>
+                                </div>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      );
+                    })()}
+                    {/* WhatsApp quick action */}
+                    {(c.whatsapp || c.phone) && (
+                      <a href={waLink(c.whatsapp||c.phone,"Hello! We have new collections available. Would you like to see our latest arrivals? 🛍️")} target="_blank" rel="noreferrer" style={{display:"inline-flex",alignItems:"center",gap:6,marginTop:10,padding:"7px 14px",borderRadius:8,background:"#25D366",color:"#fff",fontSize:12,fontWeight:700,fontFamily:S.f,textDecoration:"none"}}>
+                        <MessageSquare size={13}/>Send WhatsApp
+                      </a>
+                    )}
                   </div>
                 )}
               </div>
@@ -443,62 +1715,92 @@ export default function App() {
 
       {/* ═══ CHALLANS TAB ═══ */}
       {tab === "challans" && <>
-        <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:16,flexWrap:"wrap",gap:8}}>
-          <h2 style={{margin:0,fontSize:18,fontWeight:800}}>Delivery Challans</h2>
-          <div style={{display:"flex",gap:8}}><Btn v="secondary" sz="sm" icon={<Building size={13}/>} onClick={() => setShowCompany(true)}>Company</Btn><Btn sz="sm" icon={<Plus size={14}/>} onClick={() => { setChf({...blankCh}); setShowChModal(true); }}>New Challan</Btn></div>
+        <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:14,flexWrap:"wrap",gap:8}}>
+          <h2 style={{margin:0,fontSize:17,fontWeight:800}}>Delivery Challans</h2>
+          <div style={{display:"flex",gap:6}}>
+            <Btn v="secondary" sz="sm" icon={<Building size={13}/>} onClick={() => setShowCompany(true)}>Company</Btn>
+            <Btn sz="sm" icon={<Plus size={14}/>} onClick={openNewChallan}>New Challan</Btn>
+          </div>
         </div>
-        <div className="stat-grid" style={{display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:10,marginBottom:18}}>
-          <Stat icon={<FileText size={16}/>} label="Total Challans" value={challans.length} color={S.acc}/>
+        <div className="stat-grid" style={{display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:8,marginBottom:14}}>
+          <Stat icon={<FileText size={16}/>} label="Total" value={challans.length} color={S.acc}/>
           <Stat icon={<Grid3X3 size={16}/>} label="Dispatched" value={challans.reduce((s,c) => s + c.totalQty, 0)} color={S.tea}/>
-          <Stat icon={<span style={{fontSize:14,fontWeight:800}}>₹</span>} label="Total Value" value={fmtR(challans.reduce((s,c) => s + c.totalAmt, 0))} color={S.grn}/>
+          <Stat icon={<span style={{fontSize:14,fontWeight:800}}>₹</span>} label="Value" value={fmtR(challans.reduce((s,c) => s + c.totalAmt, 0))} color={S.grn}/>
           <Stat icon={<Users size={16}/>} label="Customers" value={[...new Set(challans.map(c => c.customer.name))].length} color={S.pur}/>
         </div>
 
         {challans.length === 0 ? (
-          <div style={{display:"flex",flexDirection:"column",alignItems:"center",padding:"60px 20px",textAlign:"center"}}>
-            <div style={{width:60,height:60,borderRadius:16,background:S.accL,display:"flex",alignItems:"center",justifyContent:"center",marginBottom:14,color:S.acc}}><FileText size={28}/></div>
-            <h3 style={{margin:0,fontSize:16,fontWeight:700}}>No challans yet</h3>
-            <p style={{margin:"6px 0 18px",fontSize:13,color:S.txt2}}>Create a challan to dispatch items & auto-deduct stock</p>
-            <Btn icon={<Plus size={14}/>} onClick={() => { setChf({...blankCh}); setShowChModal(true); }}>Create Challan</Btn>
+          <div style={{display:"flex",flexDirection:"column",alignItems:"center",padding:"50px 20px",textAlign:"center"}}>
+            <div style={{width:56,height:56,borderRadius:16,background:S.accL,display:"flex",alignItems:"center",justifyContent:"center",marginBottom:12,color:S.acc}}><FileText size={26}/></div>
+            <h3 style={{margin:0,fontSize:15,fontWeight:700}}>No challans yet</h3>
+            <p style={{margin:"5px 0 16px",fontSize:13,color:S.txt2}}>Create a challan to dispatch items & auto-deduct stock</p>
+            <Btn icon={<Plus size={14}/>} onClick={openNewChallan}>Create Challan</Btn>
           </div>
         ) : (
           <div style={{display:"flex",flexDirection:"column",gap:6}}>{challans.map(ch => {
             const isE = expandedCh === ch.id;
             return (
               <div key={ch.id}>
-                <div onClick={() => setExpandedCh(isE ? null : ch.id)} style={{display:"flex",alignItems:"center",justifyContent:"space-between",padding:"14px 18px",background:S.card,borderRadius:isE?"10px 10px 0 0":10,border:`1px solid ${isE?S.bdrD:S.bdr}`,borderBottom:isE?"none":undefined,cursor:"pointer",flexWrap:"wrap",gap:8}}>
-                  <div style={{display:"flex",alignItems:"center",gap:12}}>
-                    <div style={{width:40,height:40,borderRadius:10,background:S.accL,display:"flex",alignItems:"center",justifyContent:"center",color:S.acc}}><FileText size={18}/></div>
-                    <div><div style={{fontSize:14,fontWeight:700}}>{ch.number}</div><div style={{fontSize:11,color:S.txt2}}>{ch.customer.name} · {fmtD(ch.date)}</div></div>
-                  </div>
-                  <div style={{display:"flex",alignItems:"center",gap:10,flexWrap:"wrap"}}>
-                    <Tag color={S.tea}>{ch.totalQty} pcs</Tag>
-                    <span style={{fontSize:15,fontWeight:700,color:S.grn}}>{fmtR(ch.totalAmt)}</span>
-                    <Btn v="secondary" sz="sm" icon={<Printer size={12}/>} onClick={e => { e.stopPropagation(); printChallan(ch); }}>Print</Btn>
+                <div style={{background:S.card,borderRadius:isE?"10px 10px 0 0":10,border:`1px solid ${isE?S.bdrD:S.bdr}`,borderBottom:isE?"none":undefined}}>
+                  <div onClick={() => setExpandedCh(isE ? null : ch.id)} style={{display:"flex",alignItems:"center",justifyContent:"space-between",padding:"13px 15px",cursor:"pointer",flexWrap:"wrap",gap:8}}>
+                    <div style={{display:"flex",alignItems:"center",gap:10}}>
+                      <div style={{width:38,height:38,borderRadius:10,background:S.accL,display:"flex",alignItems:"center",justifyContent:"center",color:S.acc,flexShrink:0}}><FileText size={17}/></div>
+                      <div>
+                        <div style={{fontSize:13,fontWeight:700}}>{ch.number}</div>
+                        <div style={{fontSize:11,color:S.txt2}}>{ch.customer.name} · {fmtD(ch.date)}</div>
+                      </div>
+                    </div>
+                    <div className="ch-header-right" style={{display:"flex",alignItems:"center",gap:8,flexWrap:"wrap"}}>
+                      <Tag color={S.tea}>{ch.totalQty} pcs</Tag>
+                      <span style={{fontSize:14,fontWeight:700,color:S.grn}}>{fmtR(ch.totalAmt)}</span>
+                      <div style={{display:"flex",gap:4}} onClick={e => e.stopPropagation()}>
+                        <button onClick={() => openEditChallan(ch)} style={{background:S.accL,border:"none",borderRadius:6,padding:"5px 8px",cursor:"pointer",display:"flex",alignItems:"center",gap:4,color:S.acc,fontSize:11,fontWeight:600,fontFamily:S.f}}><Edit3 size={12}/>Edit</button>
+                        <button onClick={() => printChallan(ch)} style={{background:S.bg,border:`1px solid ${S.bdr}`,borderRadius:6,padding:"5px 8px",cursor:"pointer",display:"flex",alignItems:"center",gap:4,color:S.txt2,fontSize:11,fontWeight:600,fontFamily:S.f}}><Printer size={12}/>Print</button>
+                        <button onClick={() => downloadPDF(ch)} style={{background:S.grnL,border:"none",borderRadius:6,padding:"5px 8px",cursor:"pointer",display:"flex",alignItems:"center",gap:4,color:S.grn,fontSize:11,fontWeight:600,fontFamily:S.f}}><Download size={12}/>PDF</button>
+                        <button onClick={() => delChallan(ch)} style={{background:S.redL,border:"none",borderRadius:6,padding:5,cursor:"pointer",display:"flex",color:S.red}}><Trash2 size={13}/></button>
+                      </div>
+                    </div>
                   </div>
                 </div>
                 {isE && (
-                  <div style={{background:S.card,borderRadius:"0 0 10px 10px",border:`1px solid ${S.bdrD}`,borderTop:`1px dashed ${S.bdr}`,padding:16,overflowX:"auto"}}>
-                    <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12,marginBottom:14}}>
-                      <div style={{padding:12,background:S.bg,borderRadius:8}}><div style={{fontSize:9,fontWeight:700,color:S.txt3,textTransform:"uppercase",marginBottom:4}}>Customer</div><div style={{fontSize:13,fontWeight:600}}>{ch.customer.name}</div><div style={{fontSize:11,color:S.txt2}}>{ch.customer.address}</div></div>
-                      <div style={{padding:12,background:S.bg,borderRadius:8}}><div style={{fontSize:9,fontWeight:700,color:S.txt3,textTransform:"uppercase",marginBottom:4}}>Transport</div><div style={{fontSize:13,fontWeight:600}}>{ch.customer.transport||"—"}</div><div style={{fontSize:11,color:S.txt2}}>LR: {ch.lrNumber||"—"}</div>{ch.remarks && <div style={{fontSize:11,color:S.amb,marginTop:4}}>Note: {ch.remarks}</div>}</div>
+                  <div style={{background:S.card,borderRadius:"0 0 10px 10px",border:`1px solid ${S.bdrD}`,borderTop:`1px dashed ${S.bdr}`,padding:14}}>
+                    <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10,marginBottom:12}}>
+                      <div style={{padding:10,background:S.bg,borderRadius:8}}><div style={{fontSize:9,fontWeight:700,color:S.txt3,textTransform:"uppercase",marginBottom:3}}>Customer</div><div style={{fontSize:13,fontWeight:600}}>{ch.customer.name}</div><div style={{fontSize:11,color:S.txt2}}>{ch.customer.address}</div></div>
+                      <div style={{padding:10,background:S.bg,borderRadius:8}}><div style={{fontSize:9,fontWeight:700,color:S.txt3,textTransform:"uppercase",marginBottom:3}}>Transport</div><div style={{fontSize:13,fontWeight:600}}>{ch.customer.transport||"—"}</div><div style={{fontSize:11,color:S.txt2}}>LR: {ch.lrNumber||"—"}</div>{ch.remarks && <div style={{fontSize:11,color:S.amb,marginTop:3}}>Note: {ch.remarks}</div>}</div>
                     </div>
-                    <table style={{width:"100%",borderCollapse:"collapse",fontSize:12}}>
-                      <thead><tr style={{background:S.bg}}><th style={{textAlign:"left",padding:"8px 10px",fontSize:9,fontWeight:700,color:S.txt3,textTransform:"uppercase",borderBottom:`1px solid ${S.bdr}`}}>Article</th><th style={{textAlign:"left",padding:8,fontSize:9,fontWeight:700,color:S.txt3,borderBottom:`1px solid ${S.bdr}`}}>Color</th><th style={{textAlign:"left",padding:8,fontSize:9,fontWeight:700,color:S.txt3,borderBottom:`1px solid ${S.bdr}`}}>Size</th><th style={{textAlign:"center",padding:8,fontSize:9,fontWeight:700,color:S.txt3,borderBottom:`1px solid ${S.bdr}`}}>Qty</th><th style={{textAlign:"right",padding:8,fontSize:9,fontWeight:700,color:S.txt3,borderBottom:`1px solid ${S.bdr}`}}>Rate</th><th style={{textAlign:"right",padding:"8px 10px",fontSize:9,fontWeight:700,color:S.txt3,borderBottom:`1px solid ${S.bdr}`}}>Amount</th></tr></thead>
-                      <tbody>
-                        {ch.items.flatMap((it,ii) => it.sizes.map((sz,si) => (
-                          <tr key={`${ii}-${si}`}>
-                            <td style={{padding:"8px 10px",borderBottom:`1px solid ${S.bdr}`}}>{si===0 ? <><div style={{fontWeight:600}}>{it.articleName}</div><div style={{fontSize:10,color:S.txt2}}>{it.skuId}</div></> : ""}</td>
-                            <td style={{padding:8,borderBottom:`1px solid ${S.bdr}`}}>{si===0 ? <ColorDot name={it.colorName}/> : ""}</td>
-                            <td style={{padding:8,borderBottom:`1px solid ${S.bdr}`,fontWeight:600}}>{sz.size}</td>
-                            <td style={{textAlign:"center",padding:8,borderBottom:`1px solid ${S.bdr}`,fontWeight:700,fontFamily:S.fm}}>{sz.qty}</td>
-                            <td style={{textAlign:"right",padding:8,borderBottom:`1px solid ${S.bdr}`,fontFamily:S.fm}}>{fmtS(sz.price)}</td>
-                            <td style={{textAlign:"right",padding:"8px 10px",borderBottom:`1px solid ${S.bdr}`,fontWeight:700,fontFamily:S.fm}}>{fmtS(sz.amount)}</td>
-                          </tr>
-                        )))}
-                        <tr><td colSpan={3} style={{padding:10,fontWeight:700,textAlign:"right"}}>Total</td><td style={{textAlign:"center",padding:10,fontWeight:800,color:S.acc,fontFamily:S.fm}}>{ch.totalQty}</td><td></td><td style={{textAlign:"right",padding:10,fontWeight:800,color:S.grn,fontFamily:S.fm,fontSize:14}}>{fmtR(ch.totalAmt)}</td></tr>
-                      </tbody>
-                    </table>
+                    {/* Items with images */}
+                    <div style={{display:"flex",flexDirection:"column",gap:8}}>
+                      {ch.items.map((it, ii) => (
+                        <div key={ii} style={{background:S.bg,borderRadius:10,padding:12,border:`1px solid ${S.bdr}`}}>
+                          <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:8}}>
+                            {it.colorImage && <img src={it.colorImage} alt="" style={{width:44,height:44,borderRadius:8,objectFit:"cover",border:`1px solid ${S.bdr}`}}/>}
+                            <div>
+                              <div style={{fontSize:13,fontWeight:700}}>{it.articleName}</div>
+                              <div style={{display:"flex",alignItems:"center",gap:6,marginTop:2}}>
+                                <ColorDot name={it.colorName}/>
+                                <span style={{fontSize:10,color:S.txt3,fontFamily:S.fm}}>{it.skuId}</span>
+                              </div>
+                            </div>
+                          </div>
+                          <div style={{display:"flex",gap:6,flexWrap:"wrap"}}>
+                            {it.sizes.map((sz,si) => (
+                              <div key={si} style={{background:S.card,borderRadius:8,padding:"6px 10px",border:`1px solid ${S.bdr}`,textAlign:"center",minWidth:60}}>
+                                <div style={{fontSize:10,fontWeight:700,color:S.acc}}>{sz.size}</div>
+                                <div style={{fontSize:14,fontWeight:800,fontFamily:S.fm,color:S.txt}}>{sz.qty}</div>
+                                <div style={{fontSize:10,color:S.grn,fontFamily:S.fm}}>{fmtS(sz.price)}</div>
+                              </div>
+                            ))}
+                          </div>
+                          <div style={{textAlign:"right",fontSize:12,fontWeight:700,color:S.grn,marginTop:8}}>
+                            {it.sizes.reduce((s,sz)=>s+sz.qty,0)} pcs · {fmtR(it.sizes.reduce((s,sz)=>s+sz.amount,0))}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                    <div style={{display:"flex",justifyContent:"flex-end",gap:20,padding:"10px 0 0",borderTop:`1px solid ${S.bdr}`,marginTop:10}}>
+                      <div style={{textAlign:"center"}}><div style={{fontSize:9,fontWeight:700,color:S.txt3,textTransform:"uppercase"}}>Total Qty</div><div style={{fontSize:18,fontWeight:800,color:S.acc,fontFamily:S.fm}}>{ch.totalQty}</div></div>
+                      <div style={{textAlign:"center"}}><div style={{fontSize:9,fontWeight:700,color:S.txt3,textTransform:"uppercase"}}>Total Amount</div><div style={{fontSize:18,fontWeight:800,color:S.grn,fontFamily:S.fm}}>{fmtR(ch.totalAmt)}</div></div>
+                    </div>
                   </div>
                 )}
               </div>
@@ -506,9 +1808,194 @@ export default function App() {
           })}</div>
         )}
       </>}
+
+      {/* ═══ ORDERS TAB ═══ */}
+      {tab === "orders" && <>
+        <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:14,flexWrap:"wrap",gap:8}}>
+          <h2 style={{margin:0,fontSize:17,fontWeight:800}}>Customer Orders</h2>
+          <div style={{display:"flex",gap:6,alignItems:"center",flexWrap:"wrap"}}>
+            <Tag color={S.amb}>{orders.filter(o=>o.status==="pending").length} Pending</Tag>
+            <Tag color={S.grn}>{orders.filter(o=>o.status==="approved").length} Approved</Tag>
+            <Btn sz="sm" icon={<ExternalLink size={13}/>} onClick={shareLink} v="secondary">{linkCopied?"Copied! ✓":"Share Shop Link"}</Btn>
+            <Btn sz="sm" icon={<KeyRound size={13}/>} onClick={()=>setShowChangePIN(true)} v="secondary">Change PIN</Btn>
+          </div>
+        </div>
+        {orders.length === 0 ? (
+          <div style={{display:"flex",flexDirection:"column",alignItems:"center",padding:"50px 20px",textAlign:"center"}}>
+            <div style={{width:56,height:56,borderRadius:16,background:S.accL,display:"flex",alignItems:"center",justifyContent:"center",marginBottom:12,color:S.acc}}><ClipboardList size={26}/></div>
+            <h3 style={{margin:0,fontSize:15,fontWeight:700}}>No orders yet</h3>
+            <p style={{margin:"5px 0 16px",fontSize:13,color:S.txt2}}>Share your shop link with customers to start receiving orders</p>
+            <Btn icon={<ExternalLink size={14}/>} onClick={shareLink}>{linkCopied?"Link Copied! ✓":"Copy Shop Link"}</Btn>
+          </div>
+        ) : (
+          <div style={{display:"flex",flexDirection:"column",gap:8}}>
+            {orders.map(ord => {
+              const isE = expandedOrder === ord.id;
+              const statusColor = {pending:S.amb,approved:S.grn,rejected:S.red}[ord.status];
+              const statusBg = {pending:S.ambL,approved:S.grnL,rejected:S.redL}[ord.status];
+              const StatusIcon = {pending:Clock,approved:CheckCircle,rejected:XCircle}[ord.status];
+              return (
+                <div key={ord.id}>
+                  <div style={{background:S.card,borderRadius:isE?"10px 10px 0 0":10,border:`1px solid ${isE?S.bdrD:S.bdr}`,borderBottom:isE?"none":undefined}}>
+                    <div onClick={()=>setExpandedOrder(isE?null:ord.id)} style={{display:"flex",alignItems:"center",justifyContent:"space-between",padding:"13px 15px",cursor:"pointer",gap:8,flexWrap:"wrap"}}>
+                      <div style={{display:"flex",alignItems:"center",gap:10}}>
+                        <div style={{width:38,height:38,borderRadius:10,background:statusBg,display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0,color:statusColor}}><ClipboardList size={17}/></div>
+                        <div>
+                          <div style={{fontSize:13,fontWeight:700}}>{ord.number} · {ord.customer.name}</div>
+                          <div style={{fontSize:11,color:S.txt2}}>{ord.customer.phone} · {fmtD(ord.date)}</div>
+                        </div>
+                      </div>
+                      <div style={{display:"flex",alignItems:"center",gap:8,flexWrap:"wrap"}}>
+                        <span style={{display:"inline-flex",alignItems:"center",gap:4,padding:"4px 10px",borderRadius:20,background:statusBg,color:statusColor,fontSize:11,fontWeight:700}}><StatusIcon size={11}/>{ord.status.charAt(0).toUpperCase()+ord.status.slice(1)}</span>
+                        <Tag color={S.tea}>{ord.totalQty} pcs</Tag>
+                        <span style={{fontSize:13,fontWeight:700,color:S.grn}}>{fmtR(ord.totalAmt)}</span>
+                        {ord.status === "pending" && (
+                          <div style={{display:"flex",gap:4}} onClick={e=>e.stopPropagation()}>
+                            <button onClick={()=>updateOrderStatus(ord.id,"approved")} style={{padding:"5px 10px",borderRadius:7,border:"none",background:S.grnL,color:S.grn,fontWeight:600,fontSize:11,fontFamily:S.f,cursor:"pointer",display:"flex",alignItems:"center",gap:4}}><Check size={12}/>Approve</button>
+                            <button onClick={()=>updateOrderStatus(ord.id,"rejected")} style={{padding:"5px 10px",borderRadius:7,border:"none",background:S.redL,color:S.red,fontWeight:600,fontSize:11,fontFamily:S.f,cursor:"pointer",display:"flex",alignItems:"center",gap:4}}><X size={12}/>Reject</button>
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                  {isE && (
+                    <div style={{background:S.card,borderRadius:"0 0 10px 10px",border:`1px solid ${S.bdrD}`,borderTop:`1px dashed ${S.bdr}`,padding:14}}>
+                      {ord.note && <div style={{background:S.ambL,borderRadius:8,padding:"8px 12px",marginBottom:12,fontSize:12,color:S.amb}}>📝 {ord.note}</div>}
+                      <div style={{display:"flex",flexDirection:"column",gap:8}}>
+                        {ord.items.map((it,i) => (
+                          <div key={i} style={{background:S.bg,borderRadius:10,padding:12,border:`1px solid ${S.bdr}`,display:"flex",alignItems:"center",gap:10}}>
+                            {it.colorImage && <img src={it.colorImage} alt="" style={{width:44,height:44,borderRadius:8,objectFit:"cover",flexShrink:0}}/>}
+                            <div style={{flex:1}}>
+                              <div style={{fontSize:13,fontWeight:700}}>{it.articleName}</div>
+                              <div style={{display:"flex",gap:6,alignItems:"center",marginTop:3,flexWrap:"wrap"}}>
+                                <ColorDot name={it.colorName}/>
+                                <Tag color={S.acc}>Size {it.size}</Tag>
+                                <span style={{fontSize:12,fontWeight:600}}>×{it.qty}</span>
+                                <span style={{fontSize:12,fontWeight:700,color:S.grn}}>{fmtS(it.amount)}</span>
+                              </div>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                      <div style={{display:"flex",justifyContent:"flex-end",marginTop:10,paddingTop:10,borderTop:`1px solid ${S.bdr}`}}>
+                        <span style={{fontWeight:800,fontSize:15,color:S.grn}}>{fmtR(ord.totalAmt)}</span>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        )}
+      </>}
       </div>
 
       {/* ═══ MODALS ═══ */}
+
+      {/* Change PIN Modal */}
+      <Modal open={showChangePIN} onClose={()=>{setShowChangePIN(false);setNewPin1("");setNewPin2("");setPinChangeErr("");}} title="Change PIN" w={360}>
+        <div style={{display:"flex",flexDirection:"column",gap:12}}>
+          <Inp label="New PIN (4 digits)" placeholder="••••" type="password" maxLength={4} value={newPin1} onChange={e=>setNewPin1(e.target.value.replace(/\D/g,"").slice(0,4))} icon={<Lock size={13}/>}/>
+          <Inp label="Confirm PIN" placeholder="••••" type="password" maxLength={4} value={newPin2} onChange={e=>setNewPin2(e.target.value.replace(/\D/g,"").slice(0,4))} icon={<Lock size={13}/>}/>
+          {pinChangeErr && <div style={{fontSize:12,color:S.red,fontWeight:600}}>{pinChangeErr}</div>}
+          <div style={{display:"flex",justifyContent:"flex-end",gap:8,marginTop:4}}>
+            <Btn v="secondary" onClick={()=>setShowChangePIN(false)}>Cancel</Btn>
+            <Btn onClick={saveNewPin} disabled={newPin1.length<4} icon={<Check size={14}/>}>Save PIN</Btn>
+          </div>
+        </div>
+      </Modal>
+
+      {/* Category Banners Modal */}
+      <Modal open={showCatBanners} onClose={()=>setShowCatBanners(false)} title="Shop Category Banners" sub="Upload banner images shown above each category in the shop" w={560}>
+        <div style={{display:"flex",flexDirection:"column",gap:12}}>
+          <div style={{fontSize:12,color:S.txt2,background:S.accL,borderRadius:8,padding:"8px 12px"}}>
+            💡 Banners appear as a full-width image header above each category in the customer shop view. Best size: 1200×300px landscape.
+          </div>
+          {cats.map(cat => (
+            <div key={cat} style={{background:S.bg,borderRadius:12,padding:14,border:`1px solid ${S.bdr}`}}>
+              <div style={{display:"flex",alignItems:"center",gap:12}}>
+                <div style={{flex:1,minWidth:0}}>
+                  <div style={{fontSize:13,fontWeight:700,marginBottom:6}}>{cat}</div>
+                  {catBanners[cat] ? (
+                    <div style={{position:"relative",borderRadius:10,overflow:"hidden",height:80}}>
+                      <img src={catBanners[cat]} alt={cat} style={{width:"100%",height:"100%",objectFit:"cover"}}/>
+                      <button onClick={()=>setCatBannersDB({...catBanners,[cat]:null})} style={{position:"absolute",top:6,right:6,background:"rgba(0,0,0,.6)",border:"none",borderRadius:6,padding:"3px 6px",cursor:"pointer",color:"#fff",fontSize:10,fontWeight:600,display:"flex",alignItems:"center",gap:3}}>
+                        <X size={10}/>Remove
+                      </button>
+                    </div>
+                  ) : (
+                    <div style={{color:S.txt3,fontSize:12}}>No banner — categories show with a plain heading divider</div>
+                  )}
+                </div>
+                <ImgUp value={catBanners[cat]||null} onChange={v=>setCatBannersDB({...catBanners,[cat]:v})} sz={64} folder="banners"/>
+              </div>
+            </div>
+          ))}
+        </div>
+      </Modal>
+
+      {/* Backup & Restore Modal */}
+      <Modal open={showBackup} onClose={() => setShowBackup(false)} title="Backup & Restore" sub="Export, import or clear your data" w={460}>
+        <input ref={backupRef} type="file" accept=".json" onChange={importBackup} style={{display:"none"}}/>
+
+        {backupMsg && (
+          <div style={{padding:"10px 14px",borderRadius:10,marginBottom:14,background:backupMsg.startsWith("✅")?S.grnL:backupMsg.startsWith("❌")?S.redL:S.ambL,color:backupMsg.startsWith("✅")?S.grn:backupMsg.startsWith("❌")?S.red:S.amb,fontSize:13,fontWeight:600}}>
+            {backupMsg}
+          </div>
+        )}
+
+        {/* Sync status */}
+        <div style={{background:dbStatus==="synced"?S.grnL:dbStatus==="error"?S.redL:S.ambL,border:`1px solid ${dbStatus==="synced"?S.grn+"25":dbStatus==="error"?S.red+"25":S.amb+"25"}`,borderRadius:12,padding:"12px 14px",marginBottom:12,display:"flex",alignItems:"center",gap:10}}>
+          {dbStatus==="synced" && <><Wifi size={18} color={S.grn}/><div><div style={{fontSize:13,fontWeight:700,color:S.grn}}>Synced to Supabase ☁️</div><div style={{fontSize:11,color:S.txt2,marginTop:1}}>All data is safely stored in the cloud · Local cache: <strong>{getStorageInfo()}</strong></div></div></>}
+          {(dbStatus==="saving"||dbStatus==="loading") && <><RefreshCw size={18} color={S.amb} style={{animation:"spin 1s linear infinite"}}/><div><div style={{fontSize:13,fontWeight:700,color:S.amb}}>Syncing…</div><div style={{fontSize:11,color:S.txt2,marginTop:1}}>Saving to Supabase cloud database</div></div></>}
+          {dbStatus==="error" && <><WifiOff size={18} color={S.red}/><div style={{flex:1}}><div style={{fontSize:13,fontWeight:700,color:S.red}}>Sync Error</div><div style={{fontSize:11,color:S.txt2,marginTop:1}}>Working offline — data saved locally. <button onClick={loadFromDB} style={{color:S.acc,background:"none",border:"none",cursor:"pointer",fontFamily:S.f,fontSize:11,fontWeight:600,padding:0}}>Retry now</button></div></div></>}
+        </div>
+
+        <div style={{display:"flex",flexDirection:"column",gap:8}}>
+          {/* Export */}
+          <div style={{background:S.bg,borderRadius:12,padding:"14px 16px",border:`1px solid ${S.bdr}`}}>
+            <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",gap:10}}>
+              <div>
+                <div style={{fontSize:13,fontWeight:700,display:"flex",alignItems:"center",gap:6}}><Download size={15} color={S.acc}/>Export Backup</div>
+                <div style={{fontSize:11,color:S.txt2,marginTop:2}}>Download all your data as a JSON file you can keep safe</div>
+              </div>
+              <Btn onClick={exportBackup} icon={<Download size={13}/>}>Export</Btn>
+            </div>
+            <div style={{marginTop:10,fontSize:11,color:S.txt3,display:"flex",gap:16,flexWrap:"wrap"}}>
+              <span>📦 {articles.length} articles</span>
+              <span>👤 {customers.length} customers</span>
+              <span>📄 {challans.length} challans</span>
+              <span>🛒 {orders.length} orders</span>
+            </div>
+          </div>
+
+          {/* Import */}
+          <div style={{background:S.bg,borderRadius:12,padding:"14px 16px",border:`1px solid ${S.bdr}`}}>
+            <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",gap:10}}>
+              <div>
+                <div style={{fontSize:13,fontWeight:700,display:"flex",alignItems:"center",gap:6}}><Upload size={15} color={S.pur}/>Restore Backup</div>
+                <div style={{fontSize:11,color:S.txt2,marginTop:2}}>Import a previously exported JSON backup file</div>
+              </div>
+              <Btn v="secondary" onClick={() => backupRef.current?.click()} icon={<Upload size={13}/>}>Import</Btn>
+            </div>
+          </div>
+
+          {/* Clear data */}
+          <div style={{background:S.redL,borderRadius:12,padding:"14px 16px",border:`1px solid ${S.red}20`}}>
+            <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",gap:10}}>
+              <div>
+                <div style={{fontSize:13,fontWeight:700,color:S.red,display:"flex",alignItems:"center",gap:6}}><RotateCcw size={15}/>Reset All Data</div>
+                <div style={{fontSize:11,color:S.txt2,marginTop:2}}>⚠️ Permanently delete everything. Export a backup first!</div>
+              </div>
+              <Btn v="danger" onClick={clearAllData}>Clear</Btn>
+            </div>
+          </div>
+        </div>
+
+        <div style={{marginTop:14,padding:"10px 12px",background:S.ambL,borderRadius:8,fontSize:11,color:S.amb,lineHeight:1.5}}>
+          💡 <strong>Tip:</strong> Export a backup regularly and save the file to Google Drive, WhatsApp, or email so you never lose your data even if you change browsers or devices.
+        </div>
+      </Modal>
 
       {/* Article Modal */}
       <Modal open={showArtModal} onClose={() => setShowArtModal(false)} title={editArt ? "Edit Article" : "New Article"} sub="Details, sizes, colors & pricing" w={700}>
@@ -519,34 +2006,34 @@ export default function App() {
           <Sel label="Category" options={cats} placeholder="Select..." value={af.category} onChange={e => setAf({...af, category:e.target.value})}/>
         </div>
         {af.fabricQuality === "Other (Enter Manually)" && <div style={{marginTop:12}}><Inp label="Enter Fabric" placeholder="e.g. Georgette..." value={af.customFabric} onChange={e => setAf({...af, customFabric:e.target.value})}/></div>}
-        <div style={{marginTop:20}}>
+        <div style={{marginTop:18}}>
           <label style={{fontSize:10,fontWeight:700,color:S.txt3,letterSpacing:.8,textTransform:"uppercase",display:"block",marginBottom:6}}>Sizes</label>
           <div style={{display:"flex",gap:5,flexWrap:"wrap"}}>{SIZES.map(s => <SizeChip key={s} label={s} on={af.selectedSizes.includes(s)} onClick={() => toggleSz(s)}/>)}</div>
         </div>
-        <div style={{marginTop:20}}>
+        <div style={{marginTop:18}}>
           <label style={{fontSize:10,fontWeight:700,color:S.txt3,letterSpacing:.8,textTransform:"uppercase",display:"block",marginBottom:6}}>Colors & Quantities</label>
           <div style={{display:"flex",gap:8,marginBottom:10}}>
             <Inp placeholder="Color name..." value={newCol} onChange={e => setNewCol(e.target.value)} onKeyDown={e => e.key === "Enter" && addColor()} icon={<Palette size={14}/>} cStyle={{flex:1}}/>
             <Btn onClick={addColor} disabled={!newCol.trim() || af.selectedSizes.length === 0} icon={<Plus size={14}/>} style={{alignSelf:"flex-end"}}>Add</Btn>
           </div>
           {af.selectedSizes.length === 0 && af.colors.length === 0 && (
-            <div style={{padding:14,background:S.ambL,borderRadius:8,display:"flex",alignItems:"center",gap:8}}>
+            <div style={{padding:12,background:S.ambL,borderRadius:8,display:"flex",alignItems:"center",gap:8}}>
               <AlertTriangle size={14} color={S.amb}/><span style={{fontSize:12,color:S.amb}}>Select sizes first, then add colors.</span>
             </div>
           )}
           {af.colors.map((c,ci) => (
-            <div key={ci} style={{background:S.bg,borderRadius:10,border:`1px solid ${S.bdr}`,padding:14,marginBottom:10}}>
-              <div style={{display:"flex",alignItems:"flex-start",gap:12,marginBottom:12,flexWrap:"wrap"}}>
-                <ImgUp value={c.image} onChange={img => setColImg(ci, img)} sz={72}/>
+            <div key={ci} style={{background:S.bg,borderRadius:10,border:`1px solid ${S.bdr}`,padding:12,marginBottom:10}}>
+              <div style={{display:"flex",alignItems:"flex-start",gap:10,marginBottom:10,flexWrap:"wrap"}}>
+                <ImgUp value={c.image} onChange={img => setColImg(ci, img)} sz={64} folder="colors"/>
                 <div style={{flex:1,display:"flex",justifyContent:"space-between",alignItems:"center"}}>
                   <ColorDot name={c.name}/>
                   <button onClick={() => rmColor(ci)} style={{background:S.redL,border:"none",borderRadius:6,padding:4,cursor:"pointer",display:"flex",color:S.red}}><Trash2 size={13}/></button>
                 </div>
               </div>
               {af.selectedSizes.length > 0 && (
-                <div style={{display:"flex",gap:8,flexWrap:"wrap"}}>
+                <div style={{display:"flex",gap:6,flexWrap:"wrap"}}>
                   {af.selectedSizes.map(sz => (
-                    <div key={sz} style={{display:"flex",flexDirection:"column",alignItems:"center",gap:3,minWidth:64}}>
+                    <div key={sz} style={{display:"flex",flexDirection:"column",alignItems:"center",gap:3,minWidth:62}}>
                       <span style={{fontSize:10,fontWeight:700,color:S.acc}}>{sz}</span>
                       <input type="number" min="0" placeholder="Qty" value={c.sizes[sz]?.qty || ""} onChange={e => updVal(ci,sz,"qty",e.target.value)} style={{width:"100%",textAlign:"center",background:S.card,border:`1px solid ${S.bdr}`,borderRadius:6,padding:"7px 2px",color:S.txt,fontFamily:S.fm,fontSize:12,fontWeight:600,outline:"none"}}/>
                       <div style={{position:"relative",width:"100%"}}>
@@ -555,7 +2042,7 @@ export default function App() {
                       </div>
                     </div>
                   ))}
-                  <div style={{display:"flex",flexDirection:"column",alignItems:"center",gap:3,minWidth:50}}>
+                  <div style={{display:"flex",flexDirection:"column",alignItems:"center",gap:3,minWidth:48}}>
                     <span style={{fontSize:10,fontWeight:700,color:S.grn}}>TTL</span>
                     <div style={{padding:"7px 4px",fontSize:14,fontWeight:800,color:S.grn,fontFamily:S.fm}}>{Object.values(c.sizes).reduce((s,v) => s + (v.qty||0), 0)}</div>
                   </div>
@@ -564,7 +2051,7 @@ export default function App() {
             </div>
           ))}
         </div>
-        <div style={{display:"flex",justifyContent:"flex-end",gap:8,marginTop:20,paddingTop:14,borderTop:`1px solid ${S.bdr}`}}>
+        <div style={{display:"flex",justifyContent:"flex-end",gap:8,marginTop:18,paddingTop:14,borderTop:`1px solid ${S.bdr}`}}>
           <Btn v="secondary" onClick={() => setShowArtModal(false)}>Cancel</Btn>
           <Btn onClick={saveArt} disabled={!af.skuId || !af.name || !af.category || (!af.fabricQuality || (af.fabricQuality === "Other (Enter Manually)" && !af.customFabric.trim()))} icon={<Check size={14}/>}>{editArt ? "Update" : "Save"}</Btn>
         </div>
@@ -572,8 +2059,11 @@ export default function App() {
 
       {/* Categories Modal */}
       <Modal open={showCats} onClose={() => setShowCats(false)} title="Manage Categories" w={420}>
-        <div style={{display:"flex",gap:8,marginBottom:14}}><Inp placeholder="New category..." value={newCat} onChange={e => setNewCat(e.target.value)} onKeyDown={e => e.key === "Enter" && addCat()} cStyle={{flex:1}}/><Btn onClick={addCat} disabled={!newCat.trim()} icon={<Plus size={14}/>} style={{alignSelf:"flex-end"}}>Add</Btn></div>
-        {cats.map((c,i) => <div key={i} style={{display:"flex",alignItems:"center",justifyContent:"space-between",padding:"10px 12px",background:S.bg,borderRadius:8,border:`1px solid ${S.bdr}`,marginBottom:6}}><span style={{fontSize:13,fontWeight:600}}>{c}</span><button onClick={() => setCats(cats.filter(x => x !== c))} style={{background:S.redL,border:"none",borderRadius:6,padding:4,cursor:"pointer",display:"flex",color:S.red}}><Trash2 size={13}/></button></div>)}
+        <div style={{display:"flex",gap:8,marginBottom:12}}>
+          <Inp placeholder="New category..." value={newCat} onChange={e => setNewCat(e.target.value)} onKeyDown={e => e.key === "Enter" && addCat()} cStyle={{flex:1}}/>
+          <Btn onClick={addCat} disabled={!newCat.trim()} icon={<Plus size={14}/>} style={{alignSelf:"flex-end"}}>Add</Btn>
+        </div>
+        {cats.map((c,i) => <div key={i} style={{display:"flex",alignItems:"center",justifyContent:"space-between",padding:"9px 12px",background:S.bg,borderRadius:8,border:`1px solid ${S.bdr}`,marginBottom:5}}><span style={{fontSize:13,fontWeight:600}}>{c}</span><button onClick={() => setCatsDB(cats.filter(x => x !== c))} style={{background:S.redL,border:"none",borderRadius:6,padding:4,cursor:"pointer",display:"flex",color:S.red}}><Trash2 size={13}/></button></div>)}
       </Modal>
 
       {/* Customer Modal */}
@@ -593,7 +2083,7 @@ export default function App() {
           <Inp label="GST" placeholder="GSTIN" value={cf.gst} onChange={e => setCf({...cf, gst:e.target.value})} iStyle={{fontFamily:S.fm,textTransform:"uppercase"}}/>
           <Inp label="Transport Name" icon={<Truck size={13}/>} placeholder="Transport" value={cf.transport} onChange={e => setCf({...cf, transport:e.target.value})}/>
         </div>
-        <div style={{display:"flex",justifyContent:"flex-end",gap:8,marginTop:20,paddingTop:14,borderTop:`1px solid ${S.bdr}`}}>
+        <div style={{display:"flex",justifyContent:"flex-end",gap:8,marginTop:18,paddingTop:14,borderTop:`1px solid ${S.bdr}`}}>
           <Btn v="secondary" onClick={() => setShowCustModal(false)}>Cancel</Btn>
           <Btn onClick={saveCust} disabled={!cf.name || !cf.phone} icon={<Check size={14}/>}>{editCust ? "Update" : "Add"}</Btn>
         </div>
@@ -601,12 +2091,12 @@ export default function App() {
 
       {/* Customer Registration Form */}
       <Modal open={showCustForm} onClose={() => setShowCustForm(false)} title="Customer Registration Form" w={480}>
-        <div style={{background:"#fff",borderRadius:12,padding:22,border:`1px solid ${S.bdr}`}}>
-          <div style={{textAlign:"center",marginBottom:20}}>
-            <div style={{width:48,height:48,borderRadius:12,background:"linear-gradient(135deg,#4361ee,#7c3aed)",display:"flex",alignItems:"center",justifyContent:"center",margin:"0 auto 10px",color:"#fff"}}><Package size={22}/></div>
-            <div style={{fontSize:18,fontWeight:800}}>Register With Us</div>
+        <div style={{background:"#fff",borderRadius:12,padding:20,border:`1px solid ${S.bdr}`}}>
+          <div style={{textAlign:"center",marginBottom:16}}>
+            <div style={{width:44,height:44,borderRadius:12,background:"linear-gradient(135deg,#4361ee,#7c3aed)",display:"flex",alignItems:"center",justifyContent:"center",margin:"0 auto 8px",color:"#fff"}}><Package size={20}/></div>
+            <div style={{fontSize:17,fontWeight:800}}>Register With Us</div>
           </div>
-          <div style={{display:"flex",flexDirection:"column",gap:10}}>
+          <div style={{display:"flex",flexDirection:"column",gap:9}}>
             {[{l:"Name *",k:"name",ph:"Full name"},{l:"Phone *",k:"phone",ph:"+91..."},{l:"WhatsApp",k:"whatsapp",ph:"+91..."},{l:"Email",k:"email",ph:"email@...",t:"email"},{l:"DOB",k:"dob",t:"date"},{l:"Address",k:"address",ph:"Street"},{l:"City",k:"city",ph:"City"},{l:"Pincode",k:"pincode",ph:"XXXXXX"},{l:"Company",k:"company",ph:"Company"},{l:"GST",k:"gst",ph:"GSTIN"},{l:"Transport",k:"transport",ph:"Transport name"}].map(f => (
               <div key={f.k} style={{display:"flex",flexDirection:"column",gap:3}}>
                 <label style={{fontSize:11,fontWeight:600,color:"#374151"}}>{f.l}</label>
@@ -615,13 +2105,13 @@ export default function App() {
             ))}
             <div style={{display:"flex",flexDirection:"column",gap:3}}><label style={{fontSize:11,fontWeight:600,color:"#374151"}}>State</label><select value={extF.state} onChange={e => setExtF({...extF, state:e.target.value})} style={{border:"1px solid #d1d5db",borderRadius:8,padding:"9px 10px",background:"#f9fafb",fontFamily:S.f,fontSize:13,outline:"none"}}><option value="">Select...</option>{STATES_IN.map(s => <option key={s} value={s}>{s}</option>)}</select></div>
           </div>
-          <button onClick={extSubmit} disabled={!extF.name || !extF.phone} style={{width:"100%",marginTop:18,padding:"11px 0",background:extF.name&&extF.phone?"#4361ee":"#d1d5db",color:"#fff",border:"none",borderRadius:10,fontSize:14,fontWeight:700,cursor:extF.name&&extF.phone?"pointer":"not-allowed",fontFamily:S.f}}>Submit</button>
+          <button onClick={extSubmit} disabled={!extF.name || !extF.phone} style={{width:"100%",marginTop:16,padding:"11px 0",background:extF.name&&extF.phone?S.acc:"#d1d5db",color:"#fff",border:"none",borderRadius:10,fontSize:14,fontWeight:700,cursor:extF.name&&extF.phone?"pointer":"not-allowed",fontFamily:S.f}}>Submit</button>
         </div>
       </Modal>
 
       {/* Company Settings Modal */}
-      <Modal open={showCompany} onClose={() => setShowCompany(false)} title="Company Settings" sub="Logo & details for challan PDF" w={480}>
-        <div style={{display:"flex",justifyContent:"center",marginBottom:16}}><ImgUp value={companyLogo} onChange={setCompanyLogo} sz={100}/></div>
+      <Modal open={showCompany} onClose={() => { setCoDB(co); setLogoDb(companyLogo); setShowCompany(false); }} title="Company Settings" sub="Logo & details for challan PDF" w={480}>
+        <div style={{display:"flex",justifyContent:"center",marginBottom:14}}><ImgUp value={companyLogo} onChange={v => setCompanyLogo(v)} sz={90} folder="logos"/></div>
         <div className="form-grid2" style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12}}>
           <Inp label="Company Name" value={co.name} onChange={e => setCo({...co, name:e.target.value})} placeholder="Your Company" cStyle={{gridColumn:"1/-1"}}/>
           <Inp label="Address" value={co.address} onChange={e => setCo({...co, address:e.target.value})} placeholder="Address" cStyle={{gridColumn:"1/-1"}}/>
@@ -629,56 +2119,87 @@ export default function App() {
           <Inp label="Email" icon={<Mail size={13}/>} value={co.email} onChange={e => setCo({...co, email:e.target.value})} placeholder="email@..."/>
           <Inp label="GSTIN" value={co.gstin} onChange={e => setCo({...co, gstin:e.target.value})} placeholder="GST Number" iStyle={{fontFamily:S.fm,textTransform:"uppercase"}}/>
         </div>
-        <div style={{display:"flex",justifyContent:"flex-end",marginTop:20}}><Btn onClick={() => setShowCompany(false)} icon={<Check size={14}/>}>Save</Btn></div>
+        <div style={{display:"flex",justifyContent:"flex-end",marginTop:18}}><Btn onClick={() => { setCoDB(co); setLogoDb(companyLogo); setShowCompany(false); }} icon={<Check size={14}/>}>Save to Cloud</Btn></div>
       </Modal>
 
-      {/* Create Challan Modal */}
-      <Modal open={showChModal} onClose={() => setShowChModal(false)} title="Create Delivery Challan" sub="Select customer, add items, enter dispatch qty" w={760}>
-        <Sel label="Select Customer *" options={customers.map(c => ({v:c.id, l:`${c.name} — ${c.phone}`}))} placeholder="Choose customer..." value={chf.customerId} onChange={e => setChf({...chf, customerId:e.target.value})}/>
-        {selCust && (
-          <div style={{background:S.bg,borderRadius:10,padding:12,marginTop:10,display:"grid",gridTemplateColumns:"1fr 1fr",gap:8,fontSize:12}}>
-            <div><span style={{color:S.txt3,fontSize:10,fontWeight:700,textTransform:"uppercase"}}>Address</span><div style={{fontWeight:600,marginTop:2}}>{selCust.address ? `${selCust.address}, ${selCust.city}, ${selCust.state} - ${selCust.pincode}` : "—"}</div></div>
-            <div><span style={{color:S.txt3,fontSize:10,fontWeight:700,textTransform:"uppercase"}}>GST</span><div style={{fontWeight:600,marginTop:2,fontFamily:S.fm}}>{selCust.gst || "—"}</div></div>
-            <div><span style={{color:S.txt3,fontSize:10,fontWeight:700,textTransform:"uppercase"}}>Transport</span><div style={{fontWeight:600,marginTop:2}}>{selCust.transport || "—"}</div></div>
-            <div><span style={{color:S.txt3,fontSize:10,fontWeight:700,textTransform:"uppercase"}}>Agent</span><div style={{fontWeight:600,marginTop:2}}>{selCust.agent || "—"}</div></div>
-          </div>
-        )}
-        <div className="form-grid2" style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12,marginTop:14}}>
+      {/* ═══ CREATE / EDIT CHALLAN MODAL (Simplified UI) ═══ */}
+      <Modal open={showChModal} onClose={() => { setShowChModal(false); setEditCh(null); setChf({...blankCh}); }} title={editCh ? `Edit ${editCh.number}` : "New Delivery Challan"} sub="Select customer, add articles & dispatch quantities" w={720}>
+
+        {/* Step 1: Customer */}
+        <div style={{marginBottom:16}}>
+          <label style={{fontSize:10,fontWeight:700,color:S.txt3,letterSpacing:.8,textTransform:"uppercase",display:"block",marginBottom:6}}>① Customer</label>
+          <Sel options={customers.map(c => ({v:c.id, l:`${c.name} — ${c.phone}`}))} placeholder="Choose customer..." value={chf.customerId} onChange={e => setChf({...chf, customerId:e.target.value})}/>
+          {selCust && (
+            <div style={{background:S.accL,borderRadius:10,padding:"10px 14px",marginTop:8,display:"flex",flexWrap:"wrap",gap:12,fontSize:12}}>
+              <span style={{fontWeight:700,color:S.acc}}>{selCust.name}</span>
+              {selCust.transport && <span style={{color:S.txt2}}>🚚 {selCust.transport}</span>}
+              {selCust.gst && <span style={{color:S.txt2,fontFamily:S.fm}}>GST: {selCust.gst}</span>}
+              {selCust.agent && <span style={{color:S.txt2}}>Agent: {selCust.agent}</span>}
+            </div>
+          )}
+        </div>
+
+        {/* Step 2: LR + Remarks */}
+        <div className="form-grid2" style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10,marginBottom:16}}>
           <Inp label="LR Number" icon={<Truck size={13}/>} placeholder="LR/GR number" value={chf.lrNumber} onChange={e => setChf({...chf, lrNumber:e.target.value})}/>
           <Inp label="Remarks" placeholder="Notes..." value={chf.remarks} onChange={e => setChf({...chf, remarks:e.target.value})}/>
         </div>
-        <div style={{marginTop:20}}>
+
+        {/* Step 3: Items */}
+        <div>
           <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:10}}>
-            <label style={{fontSize:10,fontWeight:700,color:S.txt3,letterSpacing:.8,textTransform:"uppercase"}}>Dispatch Items</label>
-            <Btn sz="sm" v="ghost" icon={<Plus size={13}/>} onClick={addChItem}>Add Item</Btn>
+            <label style={{fontSize:10,fontWeight:700,color:S.txt3,letterSpacing:.8,textTransform:"uppercase"}}>② Dispatch Items</label>
+            <Btn sz="sm" icon={<Plus size={13}/>} onClick={addChItem}>Add Item</Btn>
           </div>
-          {chf.items.length === 0 && <div style={{padding:20,background:S.bg,borderRadius:10,textAlign:"center",color:S.txt2,fontSize:13,border:`1px dashed ${S.bdr}`}}>Click "Add Item" to select articles for dispatch</div>}
-          {chf.items.map((it,ii) => {
-            const art = getChArt(it); const col = getChCol(it);
+
+          {chf.items.length === 0 && (
+            <div style={{padding:24,background:S.bg,borderRadius:10,textAlign:"center",color:S.txt2,fontSize:13,border:`2px dashed ${S.bdr}`}}>
+              <Truck size={24} style={{margin:"0 auto 8px",display:"block",color:S.txt3}}/> Click "Add Item" to select articles
+            </div>
+          )}
+
+          {chf.items.map((it, ii) => {
+            const art = getChArt(it);
+            const col = getChCol(it);
             const availSizes = col ? art.selectedSizes.filter(sz => (col.sizes[sz]?.qty || 0) > 0) : [];
             return (
-              <div key={ii} style={{background:S.bg,borderRadius:10,border:`1px solid ${S.bdr}`,padding:14,marginBottom:10}}>
+              <div key={ii} style={{background:S.bg,borderRadius:12,border:`1px solid ${S.bdr}`,padding:14,marginBottom:10}}>
+                {/* Header */}
                 <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:10}}>
-                  <span style={{fontSize:11,fontWeight:700,color:S.acc}}>Item #{ii+1}</span>
-                  <button onClick={() => rmChItem(ii)} style={{background:S.redL,border:"none",borderRadius:6,padding:4,cursor:"pointer",display:"flex",color:S.red}}><Trash2 size={13}/></button>
+                  <div style={{display:"flex",alignItems:"center",gap:8}}>
+                    {col?.image && <img src={col.image} alt="" style={{width:40,height:40,borderRadius:8,objectFit:"cover",border:`1px solid ${S.bdr}`}}/>}
+                    <span style={{fontSize:14,fontWeight:700,color:S.acc}}>Item #{ii+1}</span>
+                    {art && col && <ColorDot name={col.name}/>}
+                    {art && <span style={{fontSize:13,fontWeight:600,color:S.txt}}>{art.name}</span>}
+                  </div>
+                  <button onClick={() => rmChItem(ii)} style={{background:S.redL,border:"none",borderRadius:6,padding:6,cursor:"pointer",display:"flex",color:S.red}}><Trash2 size={15}/></button>
                 </div>
-                <div className="form-grid2" style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10}}>
-                  <Sel label="Article" options={articles.filter(a => artTot(a) > 0).map(a => ({v:a.id, l:`${a.name} (${a.skuId})`}))} placeholder="Select article..." value={it.articleId} onChange={e => updChItem(ii,"articleId",e.target.value)}/>
+
+                {/* Article + Color selects */}
+                <div className="form-grid2" style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10,marginBottom:col && availSizes.length > 0 ? 12 : 0}}>
+                  <SearchSel label="Article" options={chArts.filter(a => editCh ? true : artTot(a) > 0).map(a => ({v:a.id, l:`${a.name} (${a.skuId})`}))} placeholder="Search article..." value={it.articleId} onChange={v => updChItem(ii,"articleId",v)}/>
                   {art && <Sel label="Color" options={art.colors.map((c,ci) => ({v:String(ci), l:c.name}))} placeholder="Select color..." value={it.colorIdx} onChange={e => updChItem(ii,"colorIdx",e.target.value)}/>}
                 </div>
+
+                {/* Size qty + price inputs */}
                 {col && availSizes.length > 0 && (
-                  <div style={{marginTop:12}}>
-                    <div style={{fontSize:10,fontWeight:700,color:S.txt3,textTransform:"uppercase",marginBottom:6}}>Enter dispatch qty per size</div>
-                    <div style={{display:"flex",gap:8,flexWrap:"wrap"}}>
+                  <div>
+                    <div style={{fontSize:12,fontWeight:700,color:S.txt3,textTransform:"uppercase",marginBottom:10}}>Qty & Rate per size</div>
+                    <div style={{display:"flex",gap:10,flexWrap:"wrap"}}>
                       {availSizes.map(sz => {
                         const avail = col.sizes[sz]?.qty || 0;
-                        const price = col.sizes[sz]?.price || 0;
+                        const defaultPrice = col.sizes[sz]?.price || 0;
+                        const customPrice = it.prices?.[sz];
+                        const qty = it.sizes[sz] || 0;
                         return (
-                          <div key={sz} style={{display:"flex",flexDirection:"column",alignItems:"center",gap:3,minWidth:70}}>
-                            <span style={{fontSize:10,fontWeight:700,color:S.acc}}>{sz}</span>
-                            <span style={{fontSize:9,color:S.txt3}}>Avail: {avail}</span>
-                            <input type="number" min="0" max={avail} placeholder="0" value={it.sizes[sz] || ""} onChange={e => updChQty(ii,sz,Math.min(Number(e.target.value)||0,avail))} style={{width:"100%",textAlign:"center",background:S.card,border:`1px solid ${S.bdr}`,borderRadius:6,padding:"7px 2px",color:S.txt,fontFamily:S.fm,fontSize:12,fontWeight:600,outline:"none"}}/>
-                            {price > 0 && <span style={{fontSize:9,color:S.grn,fontFamily:S.fm}}>{fmtS(price)}</span>}
+                          <div key={sz} style={{background:S.card,borderRadius:12,border:`2px solid ${qty > 0 ? S.acc : S.bdr}`,padding:"10px 12px",textAlign:"center",minWidth:88,transition:"border-color .15s"}}>
+                            <div style={{fontSize:14,fontWeight:800,color:qty>0?S.acc:S.txt2,marginBottom:4}}>{sz}</div>
+                            <input type="number" min="0" max={avail} placeholder="0" value={it.sizes[sz] || ""} onChange={e => updChQty(ii,sz,Math.min(Number(e.target.value)||0,avail))} style={{width:"100%",textAlign:"center",background:"transparent",border:"none",outline:"none",color:S.txt,fontFamily:S.fm,fontSize:22,fontWeight:800,padding:"2px 0"}}/>
+                            <div style={{fontSize:11,color:S.txt3,marginBottom:6}}>/ {avail} pcs</div>
+                            <div style={{borderTop:`1px dashed ${S.bdr}`,paddingTop:6,display:"flex",alignItems:"center",justifyContent:"center",gap:2}}>
+                              <span style={{fontSize:12,color:S.txt3,fontWeight:600}}>₹</span>
+                              <input type="number" min="0" placeholder={defaultPrice||"Rate"} value={customPrice !== undefined ? customPrice : (defaultPrice || "")} onChange={e => updChPrice(ii,sz,e.target.value)} style={{width:"100%",textAlign:"center",background:"transparent",border:"none",outline:"none",color:S.grn,fontFamily:S.fm,fontSize:14,fontWeight:700,padding:0}}/>
+                            </div>
                           </div>
                         );
                       })}
@@ -689,17 +2210,27 @@ export default function App() {
             );
           })}
         </div>
-        {chf.items.length > 0 && (
-          <div style={{display:"flex",justifyContent:"flex-end",gap:20,padding:"12px 0",borderTop:`1px solid ${S.bdr}`,marginTop:10}}>
-            <div style={{textAlign:"center"}}><div style={{fontSize:9,fontWeight:700,color:S.txt3,textTransform:"uppercase"}}>Total Qty</div><div style={{fontSize:18,fontWeight:800,color:S.acc,fontFamily:S.fm}}>{chTotQty}</div></div>
-            <div style={{textAlign:"center"}}><div style={{fontSize:9,fontWeight:700,color:S.txt3,textTransform:"uppercase"}}>Total Amount</div><div style={{fontSize:18,fontWeight:800,color:S.grn,fontFamily:S.fm}}>{fmtR(chTotAmt)}</div></div>
+
+        {/* Summary bar */}
+        {chTotQty > 0 && (
+          <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",padding:"12px 16px",background:S.accL,borderRadius:10,marginTop:8,border:`1px solid ${S.acc}20`}}>
+            <span style={{fontSize:13,fontWeight:600,color:S.txt2}}>Summary</span>
+            <div style={{display:"flex",gap:20}}>
+              <div style={{textAlign:"center"}}><div style={{fontSize:9,fontWeight:700,color:S.txt3,textTransform:"uppercase"}}>Total Qty</div><div style={{fontSize:18,fontWeight:800,color:S.acc,fontFamily:S.fm}}>{chTotQty}</div></div>
+              <div style={{textAlign:"center"}}><div style={{fontSize:9,fontWeight:700,color:S.txt3,textTransform:"uppercase"}}>Total Amt</div><div style={{fontSize:18,fontWeight:800,color:S.grn,fontFamily:S.fm}}>{fmtR(chTotAmt)}</div></div>
+            </div>
           </div>
         )}
-        <div style={{display:"flex",justifyContent:"flex-end",gap:8,marginTop:14,paddingTop:14,borderTop:`1px solid ${S.bdr}`}}>
-          <Btn v="secondary" onClick={() => setShowChModal(false)}>Cancel</Btn>
-          <Btn onClick={saveChallan} disabled={!chf.customerId || chf.items.length === 0 || chTotQty === 0} icon={<Check size={14}/>}>Create Challan & Deduct Stock</Btn>
+
+        <div style={{display:"flex",justifyContent:"flex-end",gap:8,marginTop:16,paddingTop:14,borderTop:`1px solid ${S.bdr}`}}>
+          <Btn v="secondary" onClick={() => { setShowChModal(false); setEditCh(null); setChf({...blankCh}); setEditChArts(null); }}>Cancel</Btn>
+          <Btn onClick={saveChallan} disabled={!chf.customerId || chf.items.length === 0 || chTotQty === 0} icon={<Check size={14}/>}>
+            {editCh ? "Update Challan" : "Create & Deduct Stock"}
+          </Btn>
         </div>
       </Modal>
+
+      <ChatBot articles={articles} co={co} chatMsgs={chatMsgs} setChatMsgs={setChatMsgs} chatOpen={chatOpen} setChatOpen={setChatOpen} chatInput={chatInput} setChatInput={setChatInput} chatLoading={chatLoading} setChatLoading={setChatLoading} chatEndRef={chatEndRef} chatInputRef={chatInputRef} buildSystemPrompt={buildSystemPrompt}/>
     </div>
   );
 }
