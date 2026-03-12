@@ -270,37 +270,7 @@ const ColorDot = ({name}) => {
   return <div style={{display:"inline-flex",alignItems:"center",gap:6,padding:"3px 10px 3px 3px",background:`hsl(${h},55%,95%)`,borderRadius:16,border:`1px solid hsl(${h},45%,85%)`}}><div style={{width:16,height:16,borderRadius:"50%",background:`hsl(${h},55%,55%)`,border:`2px solid hsl(${h},45%,85%)`}}/><span style={{fontSize:11,fontWeight:600,color:`hsl(${h},50%,35%)`}}>{name}</span></div>;
 };
 
-/* ── Image Upload with Compression ── */
-const ImgUp = ({value, onChange, sz=80}) => {
-  const ref = useRef();
-  const [uploading, setUploading] = useState(false);
-  const [err, setErr] = useState("");
-  const handle = async e => {
-    const f = e.target.files[0];
-    if (!f) return;
-    if (f.size > 10 * 1024 * 1024) { setErr("Max 10MB"); setTimeout(() => setErr(""), 3000); return; }
-    setUploading(true); setErr("");
-    try {
-      const compressed = await compressImage(f, 500, 0.6);
-      onChange(compressed);
-    } catch { setErr("Upload failed"); setTimeout(() => setErr(""), 3000); }
-    finally { setUploading(false); e.target.value = ""; }
-  };
-  return (
-    <div style={{position:"relative", display:"inline-block"}}>
-      <div onClick={() => !uploading && ref.current?.click()} style={{width:sz, height:sz, borderRadius:10, border:`2px dashed ${err ? S.red : value ? S.acc : S.bdr}`, background:value?"transparent":S.bg, display:"flex", alignItems:"center", justifyContent:"center", cursor:uploading?"wait":"pointer", overflow:"hidden", flexShrink:0}}>
-        {uploading
-          ? <div style={{textAlign:"center",color:S.acc}}><div style={{fontSize:9,marginTop:2}}>...</div></div>
-          : value
-            ? <img src={value} alt="" style={{width:"100%",height:"100%",objectFit:"cover"}}/>
-            : <div style={{textAlign:"center",color:err?S.red:S.txt3}}><Camera size={20}/><div style={{fontSize:9,marginTop:2}}>{err||"Upload"}</div></div>
-        }
-      </div>
-      <input ref={ref} type="file" accept="image/*" onChange={handle} style={{display:"none"}}/>
-      {value && !uploading && <button onClick={e => {e.stopPropagation(); onChange(null);}} style={{position:"absolute",top:-6,right:-6,width:20,height:20,borderRadius:"50%",background:S.red,border:"2px solid #fff",display:"flex",alignItems:"center",justifyContent:"center",cursor:"pointer",padding:0}}><X size={10} color="#fff"/></button>}
-    </div>
-  );
-};
+
 
 const Stat = ({icon,label,value,color}) => (
   <div style={{background:S.card,borderRadius:12,padding:"14px 16px",border:`1px solid ${S.bdr}`,flex:"1 1 130px",minWidth:0}}>
