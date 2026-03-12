@@ -1057,7 +1057,6 @@ export default function App() {
   };
 
   const delChallan = ch => {
-  const delChallan = ch => {
     askConfirm(
       `Delete Challan ${ch.number}?`,
       `This will delete the challan for ${ch.customer.name} (${ch.totalQty} pcs · ${fmtR(ch.totalAmt)}).\n\n⚠️ Stock will be restored back to inventory.`,
