@@ -1204,91 +1204,95 @@ ${ch.remarks?`<div class="notes"><strong>Remarks:</strong> ${ch.remarks}</div>`:
     setTimeout(() => URL.revokeObjectURL(url), 3000);
   };
 
-  const printPackingSlip = (ch, parcels = 1) => {
-    const html = `<!DOCTYPE html><html><head><title>Packing Slip - ${ch.number}</title>
+  const printPackingSlip = (ch) => {
+    const html = `<!DOCTYPE html><html><head><title>Packing Slip ${ch.number}</title>
 <style>
-  *{margin:0;padding:0;box-sizing:border-box}
-  body{font-family:'Segoe UI',sans-serif;background:#fff;color:#1a1a2e}
-  .slip{width:100%;max-width:400px;margin:0 auto;border:2px solid #1e293b;border-radius:8px;overflow:hidden;page-break-inside:avoid}
-  .slip-header{background:#1e293b;color:#fff;padding:12px 16px;display:flex;justify-content:space-between;align-items:center}
-  .slip-header h1{font-size:16px;font-weight:800;letter-spacing:.5px}
-  .slip-header p{font-size:11px;opacity:.75;margin-top:2px}
-  .slip-from{padding:10px 14px;background:#f8fafc;border-bottom:1px solid #e5e7eb;font-size:11px;color:#6b7280}
-  .slip-from strong{color:#1a1a2e;font-size:12px}
-  .slip-to{padding:14px 16px;border-bottom:2px dashed #e5e7eb}
-  .slip-to .label{font-size:9px;text-transform:uppercase;letter-spacing:1px;color:#9ca3af;margin-bottom:4px;font-weight:700}
-  .slip-to .name{font-size:20px;font-weight:800;color:#1a1a2e;line-height:1.2;margin-bottom:4px}
-  .slip-to .addr{font-size:12px;color:#374151;line-height:1.6}
-  .slip-to .phone{font-size:13px;font-weight:700;color:#4361ee;margin-top:4px}
-  .slip-details{display:grid;grid-template-columns:1fr 1fr 1fr;border-bottom:1px solid #e5e7eb}
-  .slip-detail{padding:10px 14px;border-right:1px solid #e5e7eb;text-align:center}
-  .slip-detail:last-child{border-right:none}
-  .slip-detail .d-label{font-size:8px;text-transform:uppercase;letter-spacing:1px;color:#9ca3af;margin-bottom:4px;font-weight:700}
-  .slip-detail .d-value{font-size:18px;font-weight:800;color:#1a1a2e}
-  .slip-detail .d-sub{font-size:10px;color:#6b7280;margin-top:1px}
-  .slip-challan{padding:10px 14px;background:#eef1ff;display:flex;justify-content:space-between;align-items:center}
-  .slip-challan span{font-size:11px;color:#4361ee;font-weight:700}
-  .slip-footer{padding:8px 14px;text-align:center;font-size:10px;color:#9ca3af;border-top:1px solid #e5e7eb}
-  @media print{
-    body{padding:0}
-    @page{margin:6mm;size:A5}
-    .no-print{display:none}
-  }
+*{margin:0;padding:0;box-sizing:border-box}
+body{font-family:'Segoe UI',sans-serif;background:#f5f6fa;display:flex;flex-direction:column;align-items:center;padding:20px;min-height:100vh}
+.controls{background:#fff;border-radius:10px;padding:14px 20px;margin-bottom:16px;display:flex;align-items:center;gap:12px;box-shadow:0 2px 8px rgba(0,0,0,.1);width:100%;max-width:440px}
+.controls label{font-size:13px;font-weight:600;color:#374151}
+.controls input{width:70px;border:1.5px solid #d1d5db;border-radius:6px;padding:6px 10px;font-size:16px;font-weight:700;text-align:center;outline:none}
+.controls button{padding:8px 18px;border:none;border-radius:7px;cursor:pointer;font-size:13px;font-weight:700}
+.btn-update{background:#eef1ff;color:#4361ee}
+.btn-print{background:#0d9f6e;color:#fff}
+.slip{width:100%;max-width:440px;background:#fff;border:2px solid #1e293b;border-radius:12px;overflow:hidden;box-shadow:0 4px 20px rgba(0,0,0,.12)}
+.hdr{background:#1e293b;color:#fff;padding:14px 18px;display:flex;justify-content:space-between;align-items:flex-start}
+.hdr-left h1{font-size:18px;font-weight:800;letter-spacing:.5px}
+.hdr-left p{font-size:11px;opacity:.7;margin-top:3px}
+.hdr-right{text-align:right}
+.hdr-right .co{font-size:14px;font-weight:700}
+.hdr-right .ph{font-size:11px;opacity:.7;margin-top:2px}
+.from-bar{background:#f1f5f9;padding:8px 18px;font-size:11px;color:#64748b;border-bottom:1px solid #e2e8f0}
+.to-section{padding:16px 18px;border-bottom:2px dashed #e2e8f0}
+.to-label{font-size:9px;font-weight:700;text-transform:uppercase;letter-spacing:1.2px;color:#9ca3af;margin-bottom:6px}
+.to-name{font-size:24px;font-weight:800;color:#1a1a2e;line-height:1.2;margin-bottom:5px}
+.to-addr{font-size:12px;color:#4b5563;line-height:1.7}
+.to-phone{font-size:14px;font-weight:700;color:#4361ee;margin-top:6px}
+.stats{display:grid;grid-template-columns:1fr 1fr 1fr;border-bottom:1px solid #e2e8f0}
+.stat{padding:12px 10px;text-align:center;border-right:1px solid #e2e8f0}
+.stat:last-child{border-right:none}
+.stat-label{font-size:8px;font-weight:700;text-transform:uppercase;letter-spacing:1px;color:#9ca3af;margin-bottom:5px}
+.stat-value{font-size:22px;font-weight:800;color:#1a1a2e;line-height:1}
+.stat-sub{font-size:10px;color:#6b7280;margin-top:3px}
+.transport-value{font-size:13px;font-weight:700;color:#1a1a2e;margin-top:2px;line-height:1.3}
+.ref-bar{background:#eef1ff;padding:10px 18px;display:flex;justify-content:space-between;align-items:center}
+.ref-bar span{font-size:11px;font-weight:700;color:#4361ee}
+.footer{padding:8px 18px;text-align:center;font-size:10px;color:#9ca3af}
+@media print{
+  body{background:#fff;padding:0}
+  .controls{display:none}
+  .slip{box-shadow:none;border-radius:0;max-width:100%;border-color:#000}
+  @page{margin:5mm;size:A5 portrait}
+}
 </style></head><body>
-<div style="padding:16px" class="no-print">
-  <div style="margin-bottom:12px;display:flex;align-items:center;gap:10">
-    <label style="font-size:13px;font-weight:600;font-family:sans-serif">Number of Parcels:</label>
-    <input id="parcelCount" type="number" min="1" value="${parcels}" style="width:70px;border:1px solid #d1d5db;border-radius:6px;padding:6px 10px;font-size:14px;font-weight:700;text-align:center"/>
-    <button onclick="updateParcels()" style="padding:7px 16px;background:#4361ee;color:#fff;border:none;border-radius:6px;cursor:pointer;font-size:13px;font-weight:600">Update</button>
-    <button onclick="window.print()" style="padding:7px 16px;background:#0d9f6e;color:#fff;border:none;border-radius:6px;cursor:pointer;font-size:13px;font-weight:600">🖨️ Print</button>
-  </div>
+<div class="controls">
+  <label>No. of Parcels:</label>
+  <input id="pc" type="number" min="1" value="1" oninput="document.getElementById('pv').textContent=this.value||1"/>
+  <button class="btn-update" onclick="document.getElementById('pv').textContent=document.getElementById('pc').value||1">Update</button>
+  <button class="btn-print" onclick="window.print()">🖨 Print</button>
 </div>
 <div class="slip">
-  <div class="slip-header">
-    <div><h1>PACKING SLIP</h1><p>${ch.number} · ${new Date(ch.date).toLocaleDateString("en-IN",{day:"2-digit",month:"short",year:"numeric"})}</p></div>
-    <div style="text-align:right"><div style="font-size:14px;font-weight:800">${co.name||"Your Company"}</div><div style="font-size:10px;opacity:.7">${co.phone||""}</div></div>
+  <div class="hdr">
+    <div class="hdr-left"><h1>PACKING SLIP</h1><p>${ch.number} &nbsp;·&nbsp; ${new Date(ch.date).toLocaleDateString("en-IN",{day:"2-digit",month:"short",year:"numeric"})}</p></div>
+    <div class="hdr-right"><div class="co">${co.name||"Your Company"}</div><div class="ph">${co.phone||""}</div></div>
   </div>
-  <div class="slip-from">From: <strong>${co.name||"Your Company"}</strong> · ${co.address||""}</div>
-  <div class="slip-to">
-    <div class="label">Ship To</div>
-    <div class="name">${ch.customer.name}</div>
-    <div class="addr">${ch.customer.address||"—"}</div>
-    <div class="phone">📞 ${ch.customer.phone||"—"}</div>
+  <div class="from-bar">From: <strong>${co.name||"Your Company"}</strong>${co.address ? " &nbsp;·&nbsp; "+co.address : ""}</div>
+  <div class="to-section">
+    <div class="to-label">Ship To</div>
+    <div class="to-name">${ch.customer.name}</div>
+    <div class="to-addr">${ch.customer.address||""}</div>
+    <div class="to-phone">&#128222; ${ch.customer.phone||"—"}</div>
   </div>
-  <div class="slip-details">
-    <div class="slip-detail">
-      <div class="d-label">Parcels</div>
-      <div class="d-value" id="parcelDisplay">${parcels}</div>
-      <div class="d-sub">boxes/bags</div>
+  <div class="stats">
+    <div class="stat">
+      <div class="stat-label">Parcels</div>
+      <div class="stat-value" id="pv">1</div>
+      <div class="stat-sub">boxes / bags</div>
     </div>
-    <div class="slip-detail">
-      <div class="d-label">Total Pcs</div>
-      <div class="d-value">${ch.totalQty}</div>
-      <div class="d-sub">pieces</div>
+    <div class="stat">
+      <div class="stat-label">Total Pcs</div>
+      <div class="stat-value">${ch.totalQty}</div>
+      <div class="stat-sub">pieces</div>
     </div>
-    <div class="slip-detail">
-      <div class="d-label">Transport</div>
-      <div class="d-value" style="font-size:12px;margin-top:2px">${ch.customer.transport||"—"}</div>
-      <div class="d-sub">LR: ${ch.lrNumber||"—"}</div>
+    <div class="stat">
+      <div class="stat-label">Transport</div>
+      <div class="transport-value">${ch.customer.transport||"—"}</div>
+      <div class="stat-sub">LR: ${ch.lrNumber||"—"}</div>
     </div>
   </div>
-  <div class="slip-challan">
-    <span>📄 Challan: ${ch.number}</span>
-    <span>📦 ${ch.items.length} article${ch.items.length>1?"s":""} · ${ch.totalQty} pcs</span>
+  <div class="ref-bar">
+    <span>&#128196; Challan: ${ch.number}</span>
+    <span>&#128230; ${ch.items.length} item${ch.items.length>1?"s":""} &nbsp;·&nbsp; ${ch.totalQty} pcs</span>
   </div>
-  <div class="slip-footer">Handle with care · ${co.name||""} · ${co.phone||""}</div>
+  <div class="footer">Handle with care &nbsp;·&nbsp; ${co.name||""} ${co.phone ? "· "+co.phone : ""}</div>
 </div>
-<script>
-function updateParcels(){
-  const n = document.getElementById('parcelCount').value||1;
-  document.getElementById('parcelDisplay').textContent = n;
-}
-</script>
 </body></html>`;
-    const w = window.open("", "_blank", "width=520,height=700");
-    if (!w) { alert("Please allow pop-ups."); return; }
-    w.document.write(html);
-    w.document.close();
+    const blob = new Blob([html], {type:"text/html;charset=utf-8"});
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url; a.target = "_blank"; a.rel = "noopener";
+    document.body.appendChild(a); a.click(); document.body.removeChild(a);
+    setTimeout(() => URL.revokeObjectURL(url), 3000);
   };
   const buildSystemPrompt = () => {
     const artList = articles.map(a => {
