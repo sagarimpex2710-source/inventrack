@@ -972,6 +972,7 @@ export default function App() {
   };
   const updChQty = (i, sz, val) => { const items = [...chf.items]; items[i] = {...items[i], sizes:{...items[i].sizes,[sz]:Math.max(0,Number(val)||0)}}; setChf({...chf, items}); };
   const updChPrice = (i, sz, val) => { const items = [...chf.items]; items[i] = {...items[i], prices:{...items[i].prices,[sz]:Math.max(0,Number(val)||0)}}; setChf({...chf, items}); };
+  const [editChArts, setEditChArts] = useState(null); // restored articles during edit
   const chArts = editChArts || articles; // use restored arts during edit
   const getChArt = it => chArts.find(a => a.id === it.articleId);
   const getChCol = it => { const a = getChArt(it); return a?.colors[Number(it.colorIdx)]; };
@@ -979,8 +980,6 @@ export default function App() {
   const chTotAmt = chf.items.reduce((s,it) => { const col = getChCol(it); if (!col) return s; return s + Object.entries(it.sizes).reduce((ss,[sz,q]) => { const p = (it.prices?.[sz] !== undefined && it.prices[sz] !== "") ? Number(it.prices[sz]) : (col.sizes[sz]?.price || 0); return ss + q * p; }, 0); }, 0);
 
   const openNewChallan = () => { setEditCh(null); setChf({...blankCh}); setShowChModal(true); };
-
-  const [editChArts, setEditChArts] = useState(null); // restored articles during edit
 
   const openEditChallan = ch => {
     const restoredArts = articles.map(a => {
