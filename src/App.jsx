@@ -547,8 +547,8 @@ export default function App() {
   const blankC = {name:"",phone:"",whatsapp:"",email:"",dob:"",address:"",city:"",state:"",pincode:"",company:"",gst:"",agent:"",transport:""};
   const [cf, setCf] = useState(blankC);
   const [extF, setExtF] = useState(blankC);
-  const [confirmDlg, setConfirmDlg] = useState(null); // {title, message, onYes}
-  const confirm = (title, message, onYes) => setConfirmDlg({title, message, onYes});
+  const [confirmDlg, setConfirmDlg] = useState(null);
+  const askConfirm = (title, message, onYes) => setConfirmDlg({title, message, onYes});
 
   const [copied, setCopied] = useState(false);
   const [gstStatus, setGstStatus] = useState(null);
@@ -922,7 +922,7 @@ export default function App() {
   };
   const delArt = id => {
     const art = articles.find(a => a.id === id);
-    confirm(
+    askConfirm(
       `Delete "${art?.name}"?`,
       `This will permanently delete the article and all its color/size data. This cannot be undone.`,
       () => { setArticlesDB(articles.filter(a => a.id !== id)); if (expanded === id) setExpanded(null); }
@@ -1057,22 +1057,23 @@ export default function App() {
   };
 
   const delChallan = ch => {
-    confirm(
+  const delChallan = ch => {
+    askConfirm(
       `Delete Challan ${ch.number}?`,
       `This will delete the challan for ${ch.customer.name} (${ch.totalQty} pcs · ${fmtR(ch.totalAmt)}).\n\n⚠️ Stock will be restored back to inventory.`,
       () => {
         const restoredArts = articles.map(a => {
-      const copy = JSON.parse(JSON.stringify(a));
-      ch.items.forEach(it => {
-        if (it.articleId !== a.id) return;
-        const ci = Number(it.colorIdx);
-        (it.sizesRaw||[]).forEach(({size,qty}) => {
-          if (copy.colors[ci]?.sizes[size]) copy.colors[ci].sizes[size].qty += qty;
+          const copy = JSON.parse(JSON.stringify(a));
+          ch.items.forEach(it => {
+            if (it.articleId !== a.id) return;
+            const ci = Number(it.colorIdx);
+            (it.sizesRaw||[]).forEach(({size,qty}) => {
+              if (copy.colors[ci]?.sizes[size]) copy.colors[ci].sizes[size].qty += qty;
+            });
+          });
+          return copy;
         });
-      });
-      return copy;
-    });
-    setArticlesDB(restoredArts);
+        setArticlesDB(restoredArts);
         setChallansDB(challans.filter(c => c.id !== ch.id));
         if (expandedCh === ch.id) setExpandedCh(null);
       }
