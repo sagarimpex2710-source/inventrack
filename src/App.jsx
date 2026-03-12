@@ -1874,7 +1874,6 @@ GUIDELINES:
                         <button onClick={() => openEditChallan(ch)} style={{background:S.accL,border:"none",borderRadius:6,padding:"5px 8px",cursor:"pointer",display:"flex",alignItems:"center",gap:4,color:S.acc,fontSize:11,fontWeight:600,fontFamily:S.f}}><Edit3 size={12}/>Edit</button>
                         <button onClick={() => printChallan(ch)} style={{background:S.bg,border:`1px solid ${S.bdr}`,borderRadius:6,padding:"5px 8px",cursor:"pointer",display:"flex",alignItems:"center",gap:4,color:S.txt2,fontSize:11,fontWeight:600,fontFamily:S.f}}><Printer size={12}/>Print</button>
                         <button onClick={() => downloadPDF(ch)} style={{background:S.grnL,border:"none",borderRadius:6,padding:"5px 8px",cursor:"pointer",display:"flex",alignItems:"center",gap:4,color:S.grn,fontSize:11,fontWeight:600,fontFamily:S.f}}><Download size={12}/>PDF</button>
-                        <button onClick={() => printPackingSlip(ch)} style={{background:S.purL,border:"none",borderRadius:6,padding:"5px 8px",cursor:"pointer",display:"flex",alignItems:"center",gap:4,color:S.pur,fontSize:11,fontWeight:600,fontFamily:S.f}}><Package size={12}/>Slip</button>
                         <button onClick={() => delChallan(ch)} style={{background:S.redL,border:"none",borderRadius:6,padding:5,cursor:"pointer",display:"flex",color:S.red}}><Trash2 size={13}/></button>
                       </div>
                     </div>
@@ -1915,9 +1914,14 @@ GUIDELINES:
                         </div>
                       ))}
                     </div>
-                    <div style={{display:"flex",justifyContent:"flex-end",gap:20,padding:"10px 0 0",borderTop:`1px solid ${S.bdr}`,marginTop:10}}>
-                      <div style={{textAlign:"center"}}><div style={{fontSize:9,fontWeight:700,color:S.txt3,textTransform:"uppercase"}}>Total Qty</div><div style={{fontSize:18,fontWeight:800,color:S.acc,fontFamily:S.fm}}>{ch.totalQty}</div></div>
-                      <div style={{textAlign:"center"}}><div style={{fontSize:9,fontWeight:700,color:S.txt3,textTransform:"uppercase"}}>Total Amount</div><div style={{fontSize:18,fontWeight:800,color:S.grn,fontFamily:S.fm}}>{fmtR(ch.totalAmt)}</div></div>
+                    <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"12px 0 0",borderTop:`1px solid ${S.bdr}`,marginTop:10,flexWrap:"wrap",gap:8}}>
+                      <div style={{display:"flex",gap:12}}>
+                        <div style={{textAlign:"center"}}><div style={{fontSize:9,fontWeight:700,color:S.txt3,textTransform:"uppercase"}}>Total Qty</div><div style={{fontSize:18,fontWeight:800,color:S.acc,fontFamily:S.fm}}>{ch.totalQty}</div></div>
+                        <div style={{textAlign:"center"}}><div style={{fontSize:9,fontWeight:700,color:S.txt3,textTransform:"uppercase"}}>Total Amount</div><div style={{fontSize:18,fontWeight:800,color:S.grn,fontFamily:S.fm}}>{fmtR(ch.totalAmt)}</div></div>
+                      </div>
+                      <button onClick={() => printPackingSlip(ch)} style={{display:"flex",alignItems:"center",gap:8,padding:"10px 18px",background:`linear-gradient(135deg,${S.pur},#9333ea)`,border:"none",borderRadius:10,cursor:"pointer",color:"#fff",fontSize:13,fontWeight:700,fontFamily:S.f,boxShadow:`0 3px 12px ${S.pur}40`}}>
+                        <Package size={16}/>Packing Slip
+                      </button>
                     </div>
                   </div>
                 )}
