@@ -40,6 +40,43 @@ const DEFAULT_CATS = ["Kurta","Pant","Kurta Pant","Dupatta Set","Top","Dresses"]
 const FABRICS = ["Cotton","Mix Blend","Viscous","Other (Enter Manually)"];
 const STATES_IN = ["Andhra Pradesh","Arunachal Pradesh","Assam","Bihar","Chhattisgarh","Goa","Gujarat","Haryana","Himachal Pradesh","Jharkhand","Karnataka","Kerala","Madhya Pradesh","Maharashtra","Manipur","Meghalaya","Mizoram","Nagaland","Odisha","Punjab","Rajasthan","Sikkim","Tamil Nadu","Telangana","Tripura","Uttar Pradesh","Uttarakhand","West Bengal","Delhi","Chandigarh","Jammu & Kashmir","Ladakh","Puducherry"];
 
+const GST_STATES = {"01":"Jammu & Kashmir","02":"Himachal Pradesh","03":"Punjab","04":"Chandigarh","05":"Uttarakhand","06":"Haryana","07":"Delhi","08":"Rajasthan","09":"Uttar Pradesh","10":"Bihar","11":"Sikkim","12":"Arunachal Pradesh","13":"Nagaland","14":"Manipur","15":"Mizoram","16":"Tripura","17":"Meghalaya","18":"Assam","19":"West Bengal","20":"Jharkhand","21":"Odisha","22":"Chhattisgarh","23":"Madhya Pradesh","24":"Gujarat","26":"Dadra & Nagar Haveli","27":"Maharashtra","28":"Andhra Pradesh","29":"Karnataka","30":"Goa","31":"Lakshadweep","32":"Kerala","33":"Tamil Nadu","34":"Puducherry","35":"Andaman & Nicobar","36":"Telangana","37":"Andhra Pradesh","38":"Ladakh"};
+
+const gstAutoFill = async (gstin, setCf, cf, setGstStatus) => {
+  const g = gstin.toUpperCase().trim();
+  if (g.length < 2) return;
+  // Instant: state from first 2 digits
+  const stateCode = g.slice(0,2);
+  const state = GST_STATES[stateCode] || "";
+  if (state) setCf(prev => ({...prev, state, gst:g}));
+  if (g.length !== 15) return;
+  // Full lookup via free GST API
+  setGstStatus("loading");
+  try {
+    const res = await fetch(`https://api.gstincheck.co.in/check/free/${g}`);
+    const data = await res.json();
+    if (data?.flag && data?.data) {
+      const d = data.data;
+      const addr = d.pradr?.addr || {};
+      setCf(prev => ({
+        ...prev,
+        gst: g,
+        company: d.tradeNam || d.lgnm || prev.company,
+        address: [addr.bnm, addr.bno, addr.st, addr.loc].filter(Boolean).join(", ") || prev.address,
+        city: addr.dst || addr.loc || prev.city,
+        pincode: addr.pncd || prev.pincode,
+        state: state || prev.state,
+      }));
+      setGstStatus("found");
+    } else {
+      setGstStatus("notfound");
+    }
+  } catch {
+    setGstStatus("error");
+  }
+  setTimeout(() => setGstStatus(""), 3000);
+};
+
 const fmtD = d => d ? new Date(d).toLocaleDateString("en-IN",{day:"2-digit",month:"short",year:"numeric"}) : "—";
 const fmtR = n => "₹" + Number(n).toLocaleString("en-IN",{minimumFractionDigits:2});
 const fmtS = n => "₹" + Number(n).toLocaleString("en-IN");
@@ -531,6 +568,7 @@ export default function App() {
   const [cf, setCf] = useState(blankC);
   const [extF, setExtF] = useState(blankC);
   const [copied, setCopied] = useState(false);
+  const [gstStatus, setGstStatus] = useState(""); // loading | found | notfound | error
 
   // ── Challans State ──
   const [challans, setChallans] = useState([]);
@@ -2080,7 +2118,31 @@ GUIDELINES:
           <Sel label="State" options={STATES_IN} placeholder="Select..." value={cf.state} onChange={e => setCf({...cf, state:e.target.value})}/>
           <Inp label="Pincode" placeholder="XXXXXX" value={cf.pincode} onChange={e => setCf({...cf, pincode:e.target.value})}/>
           <Inp label="Company" icon={<Building size={13}/>} placeholder="Company" value={cf.company} onChange={e => setCf({...cf, company:e.target.value})}/>
-          <Inp label="GST" placeholder="GSTIN" value={cf.gst} onChange={e => setCf({...cf, gst:e.target.value})} iStyle={{fontFamily:S.fm,textTransform:"uppercase"}}/>
+          {/* GST Auto-fill field */}
+          <div style={{gridColumn:"1/-1"}}>
+            <label style={{fontSize:10,fontWeight:700,color:S.txt3,letterSpacing:.8,textTransform:"uppercase",display:"block",marginBottom:3}}>GST Number</label>
+            <div style={{display:"flex",gap:8,alignItems:"center"}}>
+              <div style={{flex:1,display:"flex",alignItems:"center",background:S.bg,border:`1.5px solid ${gstStatus==="found"?S.grn:gstStatus==="notfound"||gstStatus==="error"?S.red:S.bdr}`,borderRadius:8,padding:"0 10px",transition:"border-color .2s"}}>
+                <input
+                  placeholder="Enter 15-digit GSTIN"
+                  value={cf.gst}
+                  maxLength={15}
+                  onChange={e => {
+                    const v = e.target.value.toUpperCase();
+                    setCf({...cf, gst:v});
+                    gstAutoFill(v, setCf, cf, setGstStatus);
+                  }}
+                  style={{flex:1,background:"transparent",border:"none",outline:"none",color:S.txt,fontFamily:S.fm,fontSize:13,padding:"9px 0",textTransform:"uppercase",letterSpacing:1}}
+                />
+                {gstStatus==="loading" && <RefreshCw size={14} color={S.amb} style={{animation:"spin 1s linear infinite",flexShrink:0}}/>}
+                {gstStatus==="found" && <CheckCircle size={14} color={S.grn} style={{flexShrink:0}}/>}
+                {gstStatus==="notfound" && <XCircle size={14} color={S.red} style={{flexShrink:0}}/>}
+              </div>
+            </div>
+            {gstStatus==="found" && <div style={{fontSize:11,color:S.grn,marginTop:4,fontWeight:600}}>✓ GST verified — company details auto-filled</div>}
+            {gstStatus==="notfound" && <div style={{fontSize:11,color:S.red,marginTop:4}}>GST number not found — please check</div>}
+            {gstStatus===""  && cf.gst.length >= 2 && GST_STATES[cf.gst.slice(0,2)] && <div style={{fontSize:11,color:S.txt2,marginTop:4}}>📍 State: <strong>{GST_STATES[cf.gst.slice(0,2)]}</strong></div>}
+          </div>
           <Inp label="Transport Name" icon={<Truck size={13}/>} placeholder="Transport" value={cf.transport} onChange={e => setCf({...cf, transport:e.target.value})}/>
         </div>
         <div style={{display:"flex",justifyContent:"flex-end",gap:8,marginTop:18,paddingTop:14,borderTop:`1px solid ${S.bdr}`}}>
