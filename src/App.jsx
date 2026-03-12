@@ -1204,7 +1204,92 @@ ${ch.remarks?`<div class="notes"><strong>Remarks:</strong> ${ch.remarks}</div>`:
     setTimeout(() => URL.revokeObjectURL(url), 3000);
   };
 
-  // ═══ CHATBOT ═══
+  const printPackingSlip = (ch, parcels = 1) => {
+    const html = `<!DOCTYPE html><html><head><title>Packing Slip - ${ch.number}</title>
+<style>
+  *{margin:0;padding:0;box-sizing:border-box}
+  body{font-family:'Segoe UI',sans-serif;background:#fff;color:#1a1a2e}
+  .slip{width:100%;max-width:400px;margin:0 auto;border:2px solid #1e293b;border-radius:8px;overflow:hidden;page-break-inside:avoid}
+  .slip-header{background:#1e293b;color:#fff;padding:12px 16px;display:flex;justify-content:space-between;align-items:center}
+  .slip-header h1{font-size:16px;font-weight:800;letter-spacing:.5px}
+  .slip-header p{font-size:11px;opacity:.75;margin-top:2px}
+  .slip-from{padding:10px 14px;background:#f8fafc;border-bottom:1px solid #e5e7eb;font-size:11px;color:#6b7280}
+  .slip-from strong{color:#1a1a2e;font-size:12px}
+  .slip-to{padding:14px 16px;border-bottom:2px dashed #e5e7eb}
+  .slip-to .label{font-size:9px;text-transform:uppercase;letter-spacing:1px;color:#9ca3af;margin-bottom:4px;font-weight:700}
+  .slip-to .name{font-size:20px;font-weight:800;color:#1a1a2e;line-height:1.2;margin-bottom:4px}
+  .slip-to .addr{font-size:12px;color:#374151;line-height:1.6}
+  .slip-to .phone{font-size:13px;font-weight:700;color:#4361ee;margin-top:4px}
+  .slip-details{display:grid;grid-template-columns:1fr 1fr 1fr;border-bottom:1px solid #e5e7eb}
+  .slip-detail{padding:10px 14px;border-right:1px solid #e5e7eb;text-align:center}
+  .slip-detail:last-child{border-right:none}
+  .slip-detail .d-label{font-size:8px;text-transform:uppercase;letter-spacing:1px;color:#9ca3af;margin-bottom:4px;font-weight:700}
+  .slip-detail .d-value{font-size:18px;font-weight:800;color:#1a1a2e}
+  .slip-detail .d-sub{font-size:10px;color:#6b7280;margin-top:1px}
+  .slip-challan{padding:10px 14px;background:#eef1ff;display:flex;justify-content:space-between;align-items:center}
+  .slip-challan span{font-size:11px;color:#4361ee;font-weight:700}
+  .slip-footer{padding:8px 14px;text-align:center;font-size:10px;color:#9ca3af;border-top:1px solid #e5e7eb}
+  @media print{
+    body{padding:0}
+    @page{margin:6mm;size:A5}
+    .no-print{display:none}
+  }
+</style></head><body>
+<div style="padding:16px" class="no-print">
+  <div style="margin-bottom:12px;display:flex;align-items:center;gap:10">
+    <label style="font-size:13px;font-weight:600;font-family:sans-serif">Number of Parcels:</label>
+    <input id="parcelCount" type="number" min="1" value="${parcels}" style="width:70px;border:1px solid #d1d5db;border-radius:6px;padding:6px 10px;font-size:14px;font-weight:700;text-align:center"/>
+    <button onclick="updateParcels()" style="padding:7px 16px;background:#4361ee;color:#fff;border:none;border-radius:6px;cursor:pointer;font-size:13px;font-weight:600">Update</button>
+    <button onclick="window.print()" style="padding:7px 16px;background:#0d9f6e;color:#fff;border:none;border-radius:6px;cursor:pointer;font-size:13px;font-weight:600">🖨️ Print</button>
+  </div>
+</div>
+<div class="slip">
+  <div class="slip-header">
+    <div><h1>PACKING SLIP</h1><p>${ch.number} · ${new Date(ch.date).toLocaleDateString("en-IN",{day:"2-digit",month:"short",year:"numeric"})}</p></div>
+    <div style="text-align:right"><div style="font-size:14px;font-weight:800">${co.name||"Your Company"}</div><div style="font-size:10px;opacity:.7">${co.phone||""}</div></div>
+  </div>
+  <div class="slip-from">From: <strong>${co.name||"Your Company"}</strong> · ${co.address||""}</div>
+  <div class="slip-to">
+    <div class="label">Ship To</div>
+    <div class="name">${ch.customer.name}</div>
+    <div class="addr">${ch.customer.address||"—"}</div>
+    <div class="phone">📞 ${ch.customer.phone||"—"}</div>
+  </div>
+  <div class="slip-details">
+    <div class="slip-detail">
+      <div class="d-label">Parcels</div>
+      <div class="d-value" id="parcelDisplay">${parcels}</div>
+      <div class="d-sub">boxes/bags</div>
+    </div>
+    <div class="slip-detail">
+      <div class="d-label">Total Pcs</div>
+      <div class="d-value">${ch.totalQty}</div>
+      <div class="d-sub">pieces</div>
+    </div>
+    <div class="slip-detail">
+      <div class="d-label">Transport</div>
+      <div class="d-value" style="font-size:12px;margin-top:2px">${ch.customer.transport||"—"}</div>
+      <div class="d-sub">LR: ${ch.lrNumber||"—"}</div>
+    </div>
+  </div>
+  <div class="slip-challan">
+    <span>📄 Challan: ${ch.number}</span>
+    <span>📦 ${ch.items.length} article${ch.items.length>1?"s":""} · ${ch.totalQty} pcs</span>
+  </div>
+  <div class="slip-footer">Handle with care · ${co.name||""} · ${co.phone||""}</div>
+</div>
+<script>
+function updateParcels(){
+  const n = document.getElementById('parcelCount').value||1;
+  document.getElementById('parcelDisplay').textContent = n;
+}
+</script>
+</body></html>`;
+    const w = window.open("", "_blank", "width=520,height=700");
+    if (!w) { alert("Please allow pop-ups."); return; }
+    w.document.write(html);
+    w.document.close();
+  };
   const buildSystemPrompt = () => {
     const artList = articles.map(a => {
       const colorDetails = a.colors.map(c => {
@@ -1784,6 +1869,7 @@ GUIDELINES:
                         <button onClick={() => openEditChallan(ch)} style={{background:S.accL,border:"none",borderRadius:6,padding:"5px 8px",cursor:"pointer",display:"flex",alignItems:"center",gap:4,color:S.acc,fontSize:11,fontWeight:600,fontFamily:S.f}}><Edit3 size={12}/>Edit</button>
                         <button onClick={() => printChallan(ch)} style={{background:S.bg,border:`1px solid ${S.bdr}`,borderRadius:6,padding:"5px 8px",cursor:"pointer",display:"flex",alignItems:"center",gap:4,color:S.txt2,fontSize:11,fontWeight:600,fontFamily:S.f}}><Printer size={12}/>Print</button>
                         <button onClick={() => downloadPDF(ch)} style={{background:S.grnL,border:"none",borderRadius:6,padding:"5px 8px",cursor:"pointer",display:"flex",alignItems:"center",gap:4,color:S.grn,fontSize:11,fontWeight:600,fontFamily:S.f}}><Download size={12}/>PDF</button>
+                        <button onClick={() => printPackingSlip(ch)} style={{background:S.purL,border:"none",borderRadius:6,padding:"5px 8px",cursor:"pointer",display:"flex",alignItems:"center",gap:4,color:S.pur,fontSize:11,fontWeight:600,fontFamily:S.f}}><Package size={12}/>Slip</button>
                         <button onClick={() => delChallan(ch)} style={{background:S.redL,border:"none",borderRadius:6,padding:5,cursor:"pointer",display:"flex",color:S.red}}><Trash2 size={13}/></button>
                       </div>
                     </div>
