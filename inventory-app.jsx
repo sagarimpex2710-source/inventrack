@@ -40,6 +40,32 @@ const DEFAULT_CATS = ["Kurta","Pant","Kurta Pant","Dupatta Set","Top","Dresses"]
 const FABRICS = ["Cotton","Mix Blend","Viscous","Other (Enter Manually)"];
 const STATES_IN = ["Andhra Pradesh","Arunachal Pradesh","Assam","Bihar","Chhattisgarh","Goa","Gujarat","Haryana","Himachal Pradesh","Jharkhand","Karnataka","Kerala","Madhya Pradesh","Maharashtra","Manipur","Meghalaya","Mizoram","Nagaland","Odisha","Punjab","Rajasthan","Sikkim","Tamil Nadu","Telangana","Tripura","Uttar Pradesh","Uttarakhand","West Bengal","Delhi","Chandigarh","Jammu & Kashmir","Ladakh","Puducherry"];
 
+const GST_STATES = {"01":"Jammu & Kashmir","02":"Himachal Pradesh","03":"Punjab","04":"Chandigarh","05":"Uttarakhand","06":"Haryana","07":"Delhi","08":"Rajasthan","09":"Uttar Pradesh","10":"Bihar","11":"Sikkim","12":"Arunachal Pradesh","13":"Nagaland","14":"Manipur","15":"Mizoram","16":"Tripura","17":"Meghalaya","18":"Assam","19":"West Bengal","20":"Jharkhand","21":"Odisha","22":"Chhattisgarh","23":"Madhya Pradesh","24":"Gujarat","26":"Dadra & Nagar Haveli","27":"Maharashtra","28":"Andhra Pradesh","29":"Karnataka","30":"Goa","31":"Lakshadweep","32":"Kerala","33":"Tamil Nadu","34":"Puducherry","35":"Andaman & Nicobar","36":"Telangana","37":"Andhra Pradesh","38":"Ladakh"};
+
+const gstAutoFill = (gstin, setCf, setGstStatus) => {
+  const g = gstin.toUpperCase().trim();
+  setCf(prev => ({...prev, gst: g}));
+  if (g.length < 2) { setGstStatus(""); return; }
+
+  // Extract state from digits 1-2
+  const stateCode = g.slice(0,2);
+  const state = GST_STATES[stateCode] || "";
+  if (state) setCf(prev => ({...prev, gst: g, state}));
+
+  if (g.length !== 15) { setGstStatus(""); return; }
+
+  // Validate GST format: 2 digits + 10 PAN + 1 digit + Z + 1 checksum
+  const gstRegex = /^\d{2}[A-Z]{5}\d{4}[A-Z]{1}[A-Z\d]{1}Z[A-Z\d]{1}$/;
+  if (gstRegex.test(g)) {
+    // Extract PAN-based info
+    const pan = g.slice(2, 12);
+    const entityType = {"P":"Proprietor","F":"Firm/LLP","C":"Company","H":"HUF","A":"AOP","B":"BOI","G":"Govt","J":"AI","L":"Local","T":"Trust"}[pan[3]] || "";
+    setGstStatus({state, pan, entityType, valid: true});
+  } else {
+    setGstStatus({valid: false});
+  }
+};
+
 const fmtD = d => d ? new Date(d).toLocaleDateString("en-IN",{day:"2-digit",month:"short",year:"numeric"}) : "—";
 const fmtR = n => "₹" + Number(n).toLocaleString("en-IN",{minimumFractionDigits:2});
 const fmtS = n => "₹" + Number(n).toLocaleString("en-IN");
@@ -531,6 +557,7 @@ export default function App() {
   const [cf, setCf] = useState(blankC);
   const [extF, setExtF] = useState(blankC);
   const [copied, setCopied] = useState(false);
+  const [gstStatus, setGstStatus] = useState(null);
 
   // ── Challans State ──
   const [challans, setChallans] = useState([]);
@@ -904,8 +931,8 @@ export default function App() {
   const filteredArt = articles.filter(a => (a.name.toLowerCase().includes(search.toLowerCase()) || a.skuId.toLowerCase().includes(search.toLowerCase())) && (fCat === "All" || a.category === fCat));
 
   // ═══ CUSTOMER HELPERS ═══
-  const openAddCust = () => { setEditCust(null); setCf({...blankC}); setShowCustModal(true); };
-  const openEditCust = c => { setEditCust(c); setCf({name:c.name,phone:c.phone,whatsapp:c.whatsapp||"",email:c.email||"",dob:c.dob||"",address:c.address||"",city:c.city||"",state:c.state||"",pincode:c.pincode||"",company:c.company||"",gst:c.gst||"",agent:c.agent||"",transport:c.transport||""}); setShowCustModal(true); };
+  const openAddCust = () => { setEditCust(null); setCf({...blankC}); setGstStatus(null); setShowCustModal(true); };
+  const openEditCust = c => { setEditCust(c); setCf({name:c.name,phone:c.phone,whatsapp:c.whatsapp||"",email:c.email||"",dob:c.dob||"",address:c.address||"",city:c.city||"",state:c.state||"",pincode:c.pincode||"",company:c.company||"",gst:c.gst||"",agent:c.agent||"",transport:c.transport||""}); setGstStatus(null); setShowCustModal(true); };
   const saveCust = () => {
     if (!cf.name || !cf.phone) return;
     const updated = editCust ? customers.map(c => c.id === editCust.id ? {...c,...cf} : c) : [...customers, {id:uid(),...cf,createdAt:Date.now(),purchases:[]}];
@@ -1177,7 +1204,97 @@ ${ch.remarks?`<div class="notes"><strong>Remarks:</strong> ${ch.remarks}</div>`:
     setTimeout(() => URL.revokeObjectURL(url), 3000);
   };
 
-  // ═══ CHATBOT ═══
+  const printPackingSlip = (ch) => {
+    const html = `<!DOCTYPE html><html><head><title>Packing Slip ${ch.number}</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+body{font-family:'Segoe UI',sans-serif;background:#f5f6fa;display:flex;flex-direction:column;align-items:center;padding:20px;min-height:100vh}
+.controls{background:#fff;border-radius:10px;padding:14px 20px;margin-bottom:16px;display:flex;align-items:center;gap:12px;box-shadow:0 2px 8px rgba(0,0,0,.1);width:100%;max-width:440px}
+.controls label{font-size:13px;font-weight:600;color:#374151}
+.controls input{width:70px;border:1.5px solid #d1d5db;border-radius:6px;padding:6px 10px;font-size:16px;font-weight:700;text-align:center;outline:none}
+.controls button{padding:8px 18px;border:none;border-radius:7px;cursor:pointer;font-size:13px;font-weight:700}
+.btn-update{background:#eef1ff;color:#4361ee}
+.btn-print{background:#0d9f6e;color:#fff}
+.slip{width:100%;max-width:440px;background:#fff;border:2px solid #1e293b;border-radius:12px;overflow:hidden;box-shadow:0 4px 20px rgba(0,0,0,.12)}
+.hdr{background:#1e293b;color:#fff;padding:14px 18px;display:flex;justify-content:space-between;align-items:flex-start}
+.hdr-left h1{font-size:18px;font-weight:800;letter-spacing:.5px}
+.hdr-left p{font-size:11px;opacity:.7;margin-top:3px}
+.hdr-right{text-align:right}
+.hdr-right .co{font-size:14px;font-weight:700}
+.hdr-right .ph{font-size:11px;opacity:.7;margin-top:2px}
+.from-bar{background:#f1f5f9;padding:8px 18px;font-size:11px;color:#64748b;border-bottom:1px solid #e2e8f0}
+.to-section{padding:16px 18px;border-bottom:2px dashed #e2e8f0}
+.to-label{font-size:9px;font-weight:700;text-transform:uppercase;letter-spacing:1.2px;color:#9ca3af;margin-bottom:6px}
+.to-name{font-size:24px;font-weight:800;color:#1a1a2e;line-height:1.2;margin-bottom:5px}
+.to-addr{font-size:12px;color:#4b5563;line-height:1.7}
+.to-phone{font-size:14px;font-weight:700;color:#4361ee;margin-top:6px}
+.stats{display:grid;grid-template-columns:1fr 1fr 1fr;border-bottom:1px solid #e2e8f0}
+.stat{padding:12px 10px;text-align:center;border-right:1px solid #e2e8f0}
+.stat:last-child{border-right:none}
+.stat-label{font-size:8px;font-weight:700;text-transform:uppercase;letter-spacing:1px;color:#9ca3af;margin-bottom:5px}
+.stat-value{font-size:22px;font-weight:800;color:#1a1a2e;line-height:1}
+.stat-sub{font-size:10px;color:#6b7280;margin-top:3px}
+.transport-value{font-size:13px;font-weight:700;color:#1a1a2e;margin-top:2px;line-height:1.3}
+.ref-bar{background:#eef1ff;padding:10px 18px;display:flex;justify-content:space-between;align-items:center}
+.ref-bar span{font-size:11px;font-weight:700;color:#4361ee}
+.footer{padding:8px 18px;text-align:center;font-size:10px;color:#9ca3af}
+@media print{
+  body{background:#fff;padding:0}
+  .controls{display:none}
+  .slip{box-shadow:none;border-radius:0;max-width:100%;border-color:#000}
+  @page{margin:5mm;size:A5 portrait}
+}
+</style></head><body>
+<div class="controls">
+  <label>No. of Parcels:</label>
+  <input id="pc" type="number" min="1" value="1" oninput="document.getElementById('pv').textContent=this.value||1"/>
+  <button class="btn-update" onclick="document.getElementById('pv').textContent=document.getElementById('pc').value||1">Update</button>
+  <button class="btn-print" onclick="window.print()">🖨 Print</button>
+</div>
+<div class="slip">
+  <div class="hdr">
+    <div class="hdr-left"><h1>PACKING SLIP</h1><p>${ch.number} &nbsp;·&nbsp; ${new Date(ch.date).toLocaleDateString("en-IN",{day:"2-digit",month:"short",year:"numeric"})}</p></div>
+    <div class="hdr-right"><div class="co">${co.name||"Your Company"}</div><div class="ph">${co.phone||""}</div></div>
+  </div>
+  <div class="from-bar">From: <strong>${co.name||"Your Company"}</strong>${co.address ? " &nbsp;·&nbsp; "+co.address : ""}</div>
+  <div class="to-section">
+    <div class="to-label">Ship To</div>
+    <div class="to-name">${ch.customer.name}</div>
+    <div class="to-addr">${ch.customer.address||""}</div>
+    <div class="to-phone">&#128222; ${ch.customer.phone||"—"}</div>
+  </div>
+  <div class="stats">
+    <div class="stat">
+      <div class="stat-label">Parcels</div>
+      <div class="stat-value" id="pv">1</div>
+      <div class="stat-sub">boxes / bags</div>
+    </div>
+    <div class="stat">
+      <div class="stat-label">Total Pcs</div>
+      <div class="stat-value">${ch.totalQty}</div>
+      <div class="stat-sub">pieces</div>
+    </div>
+    <div class="stat">
+      <div class="stat-label">Transport</div>
+      <div class="transport-value">${ch.customer.transport||"—"}</div>
+      <div class="stat-sub">LR: ${ch.lrNumber||"—"}</div>
+    </div>
+  </div>
+  <div class="ref-bar">
+    <span>&#128196; Challan: ${ch.number}</span>
+    <span>&#128230; ${ch.items.length} item${ch.items.length>1?"s":""} &nbsp;·&nbsp; ${ch.totalQty} pcs</span>
+  </div>
+  <div class="footer">Handle with care &nbsp;·&nbsp; ${co.name||""} ${co.phone ? "· "+co.phone : ""}</div>
+</div>
+</body></html>`;
+    const blob = new Blob([html], {type:"text/html;charset=utf-8"});
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `PackingSlip-${ch.number}.html`;
+    document.body.appendChild(a); a.click(); document.body.removeChild(a);
+    setTimeout(() => URL.revokeObjectURL(url), 3000);
+  };
   const buildSystemPrompt = () => {
     const artList = articles.map(a => {
       const colorDetails = a.colors.map(c => {
@@ -1797,9 +1914,14 @@ GUIDELINES:
                         </div>
                       ))}
                     </div>
-                    <div style={{display:"flex",justifyContent:"flex-end",gap:20,padding:"10px 0 0",borderTop:`1px solid ${S.bdr}`,marginTop:10}}>
-                      <div style={{textAlign:"center"}}><div style={{fontSize:9,fontWeight:700,color:S.txt3,textTransform:"uppercase"}}>Total Qty</div><div style={{fontSize:18,fontWeight:800,color:S.acc,fontFamily:S.fm}}>{ch.totalQty}</div></div>
-                      <div style={{textAlign:"center"}}><div style={{fontSize:9,fontWeight:700,color:S.txt3,textTransform:"uppercase"}}>Total Amount</div><div style={{fontSize:18,fontWeight:800,color:S.grn,fontFamily:S.fm}}>{fmtR(ch.totalAmt)}</div></div>
+                    <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"12px 0 0",borderTop:`1px solid ${S.bdr}`,marginTop:10,flexWrap:"wrap",gap:8}}>
+                      <div style={{display:"flex",gap:12}}>
+                        <div style={{textAlign:"center"}}><div style={{fontSize:9,fontWeight:700,color:S.txt3,textTransform:"uppercase"}}>Total Qty</div><div style={{fontSize:18,fontWeight:800,color:S.acc,fontFamily:S.fm}}>{ch.totalQty}</div></div>
+                        <div style={{textAlign:"center"}}><div style={{fontSize:9,fontWeight:700,color:S.txt3,textTransform:"uppercase"}}>Total Amount</div><div style={{fontSize:18,fontWeight:800,color:S.grn,fontFamily:S.fm}}>{fmtR(ch.totalAmt)}</div></div>
+                      </div>
+                      <button onClick={() => printPackingSlip(ch)} style={{display:"flex",alignItems:"center",gap:8,padding:"10px 18px",background:`linear-gradient(135deg,${S.pur},#9333ea)`,border:"none",borderRadius:10,cursor:"pointer",color:"#fff",fontSize:13,fontWeight:700,fontFamily:S.f,boxShadow:`0 3px 12px ${S.pur}40`}}>
+                        <Package size={16}/>Packing Slip
+                      </button>
                     </div>
                   </div>
                 )}
@@ -2080,7 +2202,35 @@ GUIDELINES:
           <Sel label="State" options={STATES_IN} placeholder="Select..." value={cf.state} onChange={e => setCf({...cf, state:e.target.value})}/>
           <Inp label="Pincode" placeholder="XXXXXX" value={cf.pincode} onChange={e => setCf({...cf, pincode:e.target.value})}/>
           <Inp label="Company" icon={<Building size={13}/>} placeholder="Company" value={cf.company} onChange={e => setCf({...cf, company:e.target.value})}/>
-          <Inp label="GST" placeholder="GSTIN" value={cf.gst} onChange={e => setCf({...cf, gst:e.target.value})} iStyle={{fontFamily:S.fm,textTransform:"uppercase"}}/>
+          {/* GST Auto-fill field */}
+          <div style={{gridColumn:"1/-1"}}>
+            <label style={{fontSize:10,fontWeight:700,color:S.txt3,letterSpacing:.8,textTransform:"uppercase",display:"block",marginBottom:3}}>GST Number</label>
+            <div style={{display:"flex",alignItems:"center",background:S.bg,border:`1.5px solid ${gstStatus?.valid===false?S.red:gstStatus?.valid?S.grn:S.bdr}`,borderRadius:8,padding:"0 10px",transition:"border-color .2s"}}>
+              <input
+                placeholder="Enter 15-digit GSTIN"
+                value={cf.gst}
+                maxLength={15}
+                onChange={e => gstAutoFill(e.target.value, setCf, setGstStatus)}
+                style={{flex:1,background:"transparent",border:"none",outline:"none",color:S.txt,fontFamily:S.fm,fontSize:13,padding:"9px 0",textTransform:"uppercase",letterSpacing:1}}
+              />
+              {gstStatus?.valid === true && <CheckCircle size={14} color={S.grn} style={{flexShrink:0}}/>}
+              {gstStatus?.valid === false && <XCircle size={14} color={S.red} style={{flexShrink:0}}/>}
+            </div>
+            {/* Info extracted from GST */}
+            {gstStatus?.valid === true && (
+              <div style={{marginTop:6,padding:"8px 12px",background:S.grnL,borderRadius:8,border:`1px solid ${S.grn}30`,fontSize:12}}>
+                <div style={{display:"flex",flexWrap:"wrap",gap:12}}>
+                  {gstStatus.state && <span>📍 <strong>State:</strong> {gstStatus.state} <span style={{color:S.grn,fontSize:10}}>(auto-filled)</span></span>}
+                  {gstStatus.entityType && <span>🏢 <strong>Type:</strong> {gstStatus.entityType}</span>}
+                  {gstStatus.pan && <span>🪪 <strong>PAN:</strong> {gstStatus.pan}</span>}
+                </div>
+              </div>
+            )}
+            {gstStatus?.valid === false && <div style={{fontSize:11,color:S.red,marginTop:4}}>⚠️ Invalid GST format — please check</div>}
+            {gstStatus?.state && gstStatus?.valid !== false && cf.gst.length < 15 && (
+              <div style={{fontSize:11,color:S.txt2,marginTop:4}}>📍 State detected: <strong>{gstStatus.state}</strong></div>
+            )}
+          </div>
           <Inp label="Transport Name" icon={<Truck size={13}/>} placeholder="Transport" value={cf.transport} onChange={e => setCf({...cf, transport:e.target.value})}/>
         </div>
         <div style={{display:"flex",justifyContent:"flex-end",gap:8,marginTop:18,paddingTop:14,borderTop:`1px solid ${S.bdr}`}}>
