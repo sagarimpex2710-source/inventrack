@@ -261,6 +261,27 @@ const Modal = ({open,onClose,title,sub,children,w=640}) => {
   );
 };
 
+const ConfirmDialog = ({open, title, message, onYes, onNo, danger=true}) => {
+  if (!open) return null;
+  return (
+    <div style={{position:"fixed",inset:0,zIndex:2000,display:"flex",alignItems:"center",justifyContent:"center",background:"rgba(0,0,0,.5)",backdropFilter:"blur(6px)",padding:16}}>
+      <div onClick={e=>e.stopPropagation()} style={{background:S.card,borderRadius:18,border:`1px solid ${S.bdr}`,width:"calc(100% - 16px)",maxWidth:380,boxShadow:"0 24px 64px rgba(0,0,0,.2)",overflow:"hidden"}}>
+        <div style={{padding:"20px 20px 16px",textAlign:"center"}}>
+          <div style={{width:52,height:52,borderRadius:16,background:danger?S.redL:S.ambL,display:"flex",alignItems:"center",justifyContent:"center",margin:"0 auto 14px"}}>
+            <AlertTriangle size={24} color={danger?S.red:S.amb}/>
+          </div>
+          <div style={{fontSize:16,fontWeight:800,marginBottom:8}}>{title}</div>
+          <div style={{fontSize:13,color:S.txt2,lineHeight:1.6}}>{message}</div>
+        </div>
+        <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:0,borderTop:`1px solid ${S.bdr}`}}>
+          <button onClick={onNo} style={{padding:"14px 0",border:"none",borderRight:`1px solid ${S.bdr}`,background:"#fff",color:S.txt2,fontSize:14,fontWeight:700,fontFamily:S.f,cursor:"pointer",borderRadius:"0 0 0 18px"}}>No, Cancel</button>
+          <button onClick={onYes} style={{padding:"14px 0",border:"none",background:danger?S.red:S.amb,color:"#fff",fontSize:14,fontWeight:700,fontFamily:S.f,cursor:"pointer",borderRadius:"0 0 18px 0"}}>Yes, Delete</button>
+        </div>
+      </div>
+    </div>
+  );
+};
+
 const SizeChip = ({label,on,onClick}) => (
   <button onClick={onClick} style={{padding:"6px 12px",borderRadius:16,fontSize:12,fontWeight:600,fontFamily:S.f,border:on?`2px solid ${S.acc}`:`1.5px solid ${S.bdr}`,background:on?S.accL:S.card,color:on?S.acc:S.txt2,cursor:"pointer",minWidth:42,textAlign:"center"}}>{label}</button>
 );
@@ -526,6 +547,9 @@ export default function App() {
   const blankC = {name:"",phone:"",whatsapp:"",email:"",dob:"",address:"",city:"",state:"",pincode:"",company:"",gst:"",agent:"",transport:""};
   const [cf, setCf] = useState(blankC);
   const [extF, setExtF] = useState(blankC);
+  const [confirmDlg, setConfirmDlg] = useState(null); // {title, message, onYes}
+  const confirm = (title, message, onYes) => setConfirmDlg({title, message, onYes});
+
   const [copied, setCopied] = useState(false);
   const [gstStatus, setGstStatus] = useState(null);
 
@@ -896,7 +920,14 @@ export default function App() {
     setArticlesDB(updated);
     setShowArtModal(false);
   };
-  const delArt = id => { setArticlesDB(articles.filter(a => a.id !== id)); if (expanded === id) setExpanded(null); };
+  const delArt = id => {
+    const art = articles.find(a => a.id === id);
+    confirm(
+      `Delete "${art?.name}"?`,
+      `This will permanently delete the article and all its color/size data. This cannot be undone.`,
+      () => { setArticlesDB(articles.filter(a => a.id !== id)); if (expanded === id) setExpanded(null); }
+    );
+  };
   const addCat = () => { const c = newCat.trim(); if (c && !cats.includes(c)) { setCatsDB([...cats, c]); setNewCat(""); } };
   const filteredArt = articles.filter(a => (a.name.toLowerCase().includes(search.toLowerCase()) || a.skuId.toLowerCase().includes(search.toLowerCase())) && (fCat === "All" || a.category === fCat));
 
@@ -1026,7 +1057,11 @@ export default function App() {
   };
 
   const delChallan = ch => {
-    const restoredArts = articles.map(a => {
+    confirm(
+      `Delete Challan ${ch.number}?`,
+      `This will delete the challan for ${ch.customer.name} (${ch.totalQty} pcs · ${fmtR(ch.totalAmt)}).\n\n⚠️ Stock will be restored back to inventory.`,
+      () => {
+        const restoredArts = articles.map(a => {
       const copy = JSON.parse(JSON.stringify(a));
       ch.items.forEach(it => {
         if (it.articleId !== a.id) return;
@@ -1038,8 +1073,10 @@ export default function App() {
       return copy;
     });
     setArticlesDB(restoredArts);
-    setChallansDB(challans.filter(c => c.id !== ch.id));
-    if (expandedCh === ch.id) setExpandedCh(null);
+        setChallansDB(challans.filter(c => c.id !== ch.id));
+        if (expandedCh === ch.id) setExpandedCh(null);
+      }
+    );
   };
 
   /* ── Challan PDF/Print ── */
@@ -1257,13 +1294,10 @@ body{font-family:'Segoe UI',sans-serif;background:#f5f6fa;display:flex;flex-dire
   <div class="footer">Handle with care &nbsp;·&nbsp; ${co.name||""} ${co.phone ? "· "+co.phone : ""}</div>
 </div>
 </body></html>`;
-    const blob = new Blob([html], {type:"text/html;charset=utf-8"});
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = `PackingSlip-${ch.number}.html`;
-    document.body.appendChild(a); a.click(); document.body.removeChild(a);
-    setTimeout(() => URL.revokeObjectURL(url), 3000);
+    const w = window.open("", "_blank");
+    if (!w) { alert("Please allow pop-ups for this site to print the packing slip.\n\nIn your browser: Settings → Pop-ups → Allow for this site."); return; }
+    w.document.write(html);
+    w.document.close();
   };
   const buildSystemPrompt = () => {
     const artList = articles.map(a => {
@@ -2349,6 +2383,14 @@ GUIDELINES:
           </Btn>
         </div>
       </Modal>
+
+      <ConfirmDialog
+        open={!!confirmDlg}
+        title={confirmDlg?.title}
+        message={confirmDlg?.message}
+        onYes={() => { confirmDlg?.onYes(); setConfirmDlg(null); }}
+        onNo={() => setConfirmDlg(null)}
+      />
 
       <ChatBot articles={articles} co={co} chatMsgs={chatMsgs} setChatMsgs={setChatMsgs} chatOpen={chatOpen} setChatOpen={setChatOpen} chatInput={chatInput} setChatInput={setChatInput} chatLoading={chatLoading} setChatLoading={setChatLoading} chatEndRef={chatEndRef} chatInputRef={chatInputRef} buildSystemPrompt={buildSystemPrompt}/>
     </div>
