@@ -2100,9 +2100,14 @@ GUIDELINES:
                       </div>
                       <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginTop:10,paddingTop:10,borderTop:`1px solid ${S.bdr}`}}>
                         <span style={{fontWeight:800,fontSize:15,color:S.grn}}>{fmtR(ord.totalAmt)}</span>
-                        <button onClick={()=>printOrderSlip(ord)} style={{display:"flex",alignItems:"center",gap:6,padding:"8px 16px",background:`linear-gradient(135deg,${S.pur},#9333ea)`,border:"none",borderRadius:8,cursor:"pointer",color:"#fff",fontSize:12,fontWeight:700,fontFamily:S.f}}>
-                          <Printer size={14}/>Print / Share
-                        </button>
+                        <div style={{display:"flex",gap:6}}>
+                          <button onClick={()=>printOrderSlip(ord)} style={{display:"flex",alignItems:"center",gap:6,padding:"8px 16px",background:`linear-gradient(135deg,${S.pur},#9333ea)`,border:"none",borderRadius:8,cursor:"pointer",color:"#fff",fontSize:12,fontWeight:700,fontFamily:S.f}}>
+                            <Printer size={14}/>Print / Share
+                          </button>
+                          <button onClick={()=>askConfirm(`Delete ${ord.number}?`,`This will permanently delete the order for ${ord.customer?.name}. This cannot be undone.`,()=>{setOrders(prev=>prev.filter(o=>o.id!==ord.id));deleteOrderFromDB(ord.id).catch(()=>{});setExpandedOrder(null);})} style={{display:"flex",alignItems:"center",gap:6,padding:"8px 14px",background:S.redL,border:"none",borderRadius:8,cursor:"pointer",color:S.red,fontSize:12,fontWeight:700,fontFamily:S.f}}>
+                            <Trash2 size={14}/>Delete
+                          </button>
+                        </div>
                       </div>
                     </div>
                   )}
