@@ -1376,7 +1376,10 @@ body{font-family:'Segoe UI',sans-serif;background:#f5f6fa;display:flex;flex-dire
     const orderItems = valid.map(it => {
       const art = articles.find(a => a.id === it.articleId);
       const col = art?.colors[Number(it.colorIdx)];
-      const sizesData = Object.entries(it.sizes).filter(([,q])=>q>0).map(([sz,q])=>({size:sz,qty:q,price:col?.sizes[sz]?.price||0,amount:q*(col?.sizes[sz]?.price||0)}));
+      const sizesData = Object.entries(it.sizes).filter(([,q])=>q>0).map(([sz,q])=>{
+        const p = (it.prices?.[sz]!==undefined && it.prices[sz]!=="") ? Number(it.prices[sz]) : (col?.sizes[sz]?.price||0);
+        return {size:sz,qty:q,price:p,amount:q*p};
+      });
       return {articleId:art.id,colorIdx:Number(it.colorIdx),articleName:art.name,skuId:art.skuId,colorName:col?.name||"",colorImage:col?.image||null,sizes:sizesData};
     });
     const tQty = orderItems.reduce((s,it)=>s+it.sizes.reduce((ss,sz)=>ss+sz.qty,0),0);
@@ -2563,11 +2566,17 @@ GUIDELINES:
                   <div style={{display:"flex",gap:8,flexWrap:"wrap"}}>
                     {art.selectedSizes.map(sz=>{
                       const qty = it.sizes[sz]||0;
+                      const defaultPrice = col.sizes[sz]?.price||0;
+                      const customPrice = it.prices?.[sz];
+                      const displayPrice = customPrice !== undefined ? customPrice : defaultPrice;
                       return (
-                        <div key={sz} style={{background:S.card,borderRadius:10,border:`2px solid ${qty>0?S.pur:S.bdr}`,padding:"8px 10px",textAlign:"center",minWidth:72}}>
+                        <div key={sz} style={{background:S.card,borderRadius:10,border:`2px solid ${qty>0?S.pur:S.bdr}`,padding:"8px 10px",textAlign:"center",minWidth:80}}>
                           <div style={{fontSize:13,fontWeight:800,color:qty>0?S.pur:S.txt2,marginBottom:4}}>{sz}</div>
                           <input type="number" min="0" placeholder="0" value={it.sizes[sz]||""} onChange={e=>{const ni=[...orderForm2.items];ni[ii]={...ni[ii],sizes:{...ni[ii].sizes,[sz]:Math.max(0,Number(e.target.value)||0)}};setOrderForm2({...orderForm2,items:ni});}} style={{width:"100%",textAlign:"center",background:"transparent",border:"none",outline:"none",color:S.txt,fontFamily:S.fm,fontSize:20,fontWeight:800,padding:"2px 0"}}/>
-                          <div style={{fontSize:10,color:S.grn,fontFamily:S.fm}}>₹{col.sizes[sz]?.price||0}</div>
+                          <div style={{borderTop:`1px dashed ${S.bdr}`,paddingTop:5,marginTop:4,display:"flex",alignItems:"center",justifyContent:"center",gap:2}}>
+                            <span style={{fontSize:11,color:S.txt3,fontWeight:600}}>₹</span>
+                            <input type="number" min="0" placeholder={defaultPrice||"Rate"} value={displayPrice||""} onChange={e=>{const ni=[...orderForm2.items];ni[ii]={...ni[ii],prices:{...ni[ii].prices,[sz]:Math.max(0,Number(e.target.value)||0)}};setOrderForm2({...orderForm2,items:ni});}} style={{width:"100%",textAlign:"center",background:"transparent",border:"none",outline:"none",color:S.grn,fontFamily:S.fm,fontSize:13,fontWeight:700,padding:0}}/>
+                          </div>
                         </div>
                       );
                     })}
@@ -2580,7 +2589,7 @@ GUIDELINES:
         {orderForm2.items.some(it=>Object.values(it.sizes).some(q=>q>0)) && (
           <div style={{padding:"10px 14px",background:S.purL,borderRadius:10,marginTop:8,display:"flex",justifyContent:"flex-end",gap:20}}>
             <div style={{textAlign:"center"}}><div style={{fontSize:9,fontWeight:700,color:S.txt3,textTransform:"uppercase"}}>Total Qty</div><div style={{fontSize:18,fontWeight:800,color:S.pur,fontFamily:S.fm}}>{orderForm2.items.reduce((s,it)=>s+Object.values(it.sizes).reduce((ss,q)=>ss+q,0),0)}</div></div>
-            <div style={{textAlign:"center"}}><div style={{fontSize:9,fontWeight:700,color:S.txt3,textTransform:"uppercase"}}>Total Amt</div><div style={{fontSize:18,fontWeight:800,color:S.grn,fontFamily:S.fm}}>{fmtR(orderForm2.items.reduce((s,it)=>{const art=articles.find(a=>a.id===it.articleId);const col=art?.colors[Number(it.colorIdx)];return s+Object.entries(it.sizes).reduce((ss,[sz,q])=>ss+q*(col?.sizes[sz]?.price||0),0);},0))}</div></div>
+            <div style={{textAlign:"center"}}><div style={{fontSize:9,fontWeight:700,color:S.txt3,textTransform:"uppercase"}}>Total Amt</div><div style={{fontSize:18,fontWeight:800,color:S.grn,fontFamily:S.fm}}>{fmtR(orderForm2.items.reduce((s,it)=>{const art=articles.find(a=>a.id===it.articleId);const col=art?.colors[Number(it.colorIdx)];return s+Object.entries(it.sizes).reduce((ss,[sz,q])=>{const p=(it.prices?.[sz]!==undefined&&it.prices[sz]!=="")? Number(it.prices[sz]):(col?.sizes[sz]?.price||0);return ss+q*p;},0);},0))}</div></div>
           </div>
         )}
         <div style={{display:"flex",justifyContent:"flex-end",gap:8,marginTop:16,paddingTop:14,borderTop:`1px solid ${S.bdr}`}}>
