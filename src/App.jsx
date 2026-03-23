@@ -603,6 +603,10 @@ export default function App() {
   // ── Orders State ──
   const [orders, setOrders] = useState([]);
   const [expandedOrder, setExpandedOrder] = useState(null);
+  const [showStockView, setShowStockView] = useState(false);
+  const [showCreateOrder, setShowCreateOrder] = useState(false);
+  const blankOF = {customerId:"", remarks:"", items:[]};
+  const [orderForm2, setOrderForm2] = useState(blankOF);
 
   // ── Backup State ──
   const [showBackup, setShowBackup] = useState(false);
@@ -1298,6 +1302,93 @@ body{font-family:'Segoe UI',sans-serif;background:#f5f6fa;display:flex;flex-dire
     w.document.write(html);
     w.document.close();
   };
+  const printOrderSlip = (ord) => {
+    const rows = ord.items.map((it,idx) => {
+      const bg = idx%2===0?"#fff":"#f9fafb";
+      return `<tr style="background:${bg}">
+        <td style="padding:6px 10px;color:#9ca3af;font-size:11px">${idx+1}</td>
+        <td style="padding:6px 10px"><div style="font-weight:700;font-size:12px">${it.articleName}</div><div style="font-size:10px;color:#9ca3af">${it.skuId||""}</div></td>
+        <td style="padding:6px 10px"><div style="display:flex;align-items:center;gap:6px">${it.colorImage?`<img src="${it.colorImage}" style="width:36px;height:36px;border-radius:6px;object-fit:cover"/>`:""}
+          <span style="font-size:12px;font-weight:600">${it.colorName}</span></div></td>
+        <td style="padding:6px 10px">${it.sizes.map(sz=>`<span style="display:inline-block;background:#eef1ff;border-radius:4px;padding:2px 7px;margin:2px;font-size:11px;font-weight:700;color:#4361ee">${sz.size}: ${sz.qty}</span>`).join("")}</td>
+        <td style="padding:6px 10px;text-align:center;font-weight:700;font-size:13px">${it.sizes.reduce((s,sz)=>s+sz.qty,0)}</td>
+        <td style="padding:6px 10px;text-align:right;font-weight:700;font-size:12px;color:#0d9f6e">Rs.${Number(it.sizes.reduce((s,sz)=>s+sz.amount,0)).toLocaleString("en-IN")}</td>
+      </tr>`;
+    }).join("");
+    const html = `<!DOCTYPE html><html><head><title>Order ${ord.number}</title>
+<style>*{margin:0;padding:0;box-sizing:border-box}body{font-family:'Segoe UI',sans-serif;padding:20px;color:#1a1a2e}
+.no-print{margin-bottom:14px;display:flex;gap:8px}
+.no-print button{padding:8px 18px;border:none;border-radius:7px;cursor:pointer;font-size:13px;font-weight:700;font-family:sans-serif}
+@media print{.no-print{display:none}@page{margin:8mm}}</style></head><body>
+<div class="no-print">
+  <button onclick="window.print()" style="background:#4361ee;color:#fff">🖨 Print / Save PDF</button>
+  <button onclick="window.close()" style="background:#f1f5f9;color:#374151">Close</button>
+</div>
+<div style="border:2px solid #1e293b;border-radius:10px;overflow:hidden">
+  <div style="background:#1e293b;color:#fff;padding:14px 18px;display:flex;justify-content:space-between;align-items:center">
+    <div><div style="font-size:18px;font-weight:800">CUSTOMER ORDER</div><div style="font-size:11px;opacity:.7;margin-top:2px">${ord.number} · ${new Date(ord.date).toLocaleDateString("en-IN",{day:"2-digit",month:"short",year:"numeric"})}</div></div>
+    <div style="text-align:right"><div style="font-size:14px;font-weight:700">${co.name||"Your Company"}</div><div style="font-size:11px;opacity:.7">${co.phone||""}</div></div>
+  </div>
+  <div style="display:grid;grid-template-columns:1fr 1fr;border-bottom:1px solid #e5e7eb">
+    <div style="padding:12px 16px;border-right:1px solid #e5e7eb">
+      <div style="font-size:9px;font-weight:700;text-transform:uppercase;letter-spacing:1px;color:#9ca3af;margin-bottom:4px">Customer</div>
+      <div style="font-size:15px;font-weight:800">${ord.customer?.name||"—"}</div>
+      <div style="font-size:12px;color:#6b7280;margin-top:2px">${ord.customer?.phone||""}</div>
+      ${ord.customer?.address?`<div style="font-size:11px;color:#9ca3af;margin-top:2px">${ord.customer.address}</div>`:""}
+    </div>
+    <div style="padding:12px 16px">
+      <div style="font-size:9px;font-weight:700;text-transform:uppercase;letter-spacing:1px;color:#9ca3af;margin-bottom:4px">Details</div>
+      ${ord.remarks?`<div style="font-size:12px;color:#374151">Note: <strong>${ord.remarks}</strong></div>`:""}
+      <div style="font-size:12px;color:#374151;margin-top:4px">Total: <strong style="color:#0d9f6e">Rs.${Number(ord.totalAmt).toLocaleString("en-IN")}</strong></div>
+      <div style="font-size:12px;color:#374151;margin-top:2px">Pieces: <strong>${ord.totalQty}</strong></div>
+    </div>
+  </div>
+  <table style="width:100%;border-collapse:collapse">
+    <thead><tr style="background:#f8fafc">
+      <th style="padding:8px 10px;text-align:left;font-size:9px;text-transform:uppercase;color:#9ca3af;font-weight:700">#</th>
+      <th style="padding:8px 10px;text-align:left;font-size:9px;text-transform:uppercase;color:#9ca3af;font-weight:700">Article</th>
+      <th style="padding:8px 10px;text-align:left;font-size:9px;text-transform:uppercase;color:#9ca3af;font-weight:700">Color</th>
+      <th style="padding:8px 10px;text-align:left;font-size:9px;text-transform:uppercase;color:#9ca3af;font-weight:700">Sizes & Qty</th>
+      <th style="padding:8px 10px;text-align:center;font-size:9px;text-transform:uppercase;color:#9ca3af;font-weight:700">Pcs</th>
+      <th style="padding:8px 10px;text-align:right;font-size:9px;text-transform:uppercase;color:#9ca3af;font-weight:700">Amount</th>
+    </tr></thead>
+    <tbody>${rows}
+    <tr style="background:#ecfdf5">
+      <td colspan="4" style="padding:10px;text-align:right;font-weight:800;font-size:12px">Grand Total</td>
+      <td style="padding:10px;text-align:center;font-weight:800">${ord.totalQty} pcs</td>
+      <td style="padding:10px;text-align:right;font-weight:800;color:#0d9f6e;font-size:14px">Rs.${Number(ord.totalAmt).toLocaleString("en-IN")}</td>
+    </tr></tbody>
+  </table>
+  <div style="padding:10px 16px;text-align:center;font-size:10px;color:#9ca3af;border-top:1px solid #e5e7eb">
+    This is a proforma order — not a tax invoice · ${co.name||""} ${co.phone?"· "+co.phone:""}
+  </div>
+</div></body></html>`;
+    const w = window.open("","_blank");
+    if (!w) { alert("Please allow pop-ups for this site."); return; }
+    w.document.write(html); w.document.close();
+  };
+
+  const saveManualOrder = () => {
+    if (!orderForm2.customerId || orderForm2.items.length === 0) return;
+    const cust = customers.find(c => c.id === orderForm2.customerId);
+    const valid = orderForm2.items.filter(it => it.articleId && it.colorIdx !== "" && Object.values(it.sizes).some(q=>q>0));
+    if (valid.length === 0) return;
+    const orderItems = valid.map(it => {
+      const art = articles.find(a => a.id === it.articleId);
+      const col = art?.colors[Number(it.colorIdx)];
+      const sizesData = Object.entries(it.sizes).filter(([,q])=>q>0).map(([sz,q])=>({size:sz,qty:q,price:col?.sizes[sz]?.price||0,amount:q*(col?.sizes[sz]?.price||0)}));
+      return {articleId:art.id,colorIdx:Number(it.colorIdx),articleName:art.name,skuId:art.skuId,colorName:col?.name||"",colorImage:col?.image||null,sizes:sizesData};
+    });
+    const tQty = orderItems.reduce((s,it)=>s+it.sizes.reduce((ss,sz)=>ss+sz.qty,0),0);
+    const tAmt = orderItems.reduce((s,it)=>s+it.sizes.reduce((ss,sz)=>ss+sz.amount,0),0);
+    const ord = {id:uid(),number:`ORD-${String(orders.length+1).padStart(4,"0")}`,date:Date.now(),customer:{name:cust.name,phone:cust.phone,address:`${cust.address||""}, ${cust.city||""}, ${cust.state||""}`.replace(/^,\s*/,"")},remarks:orderForm2.remarks,items:orderItems,totalQty:tQty,totalAmt:tAmt,status:"manual",type:"manual"};
+    setOrders(prev=>[ord,...prev]);
+    saveOrderToDB(ord).catch(()=>{});
+    setShowCreateOrder(false);
+    setOrderForm2(blankOF);
+    setTimeout(()=>printOrderSlip(ord),300);
+  };
+
   const buildSystemPrompt = () => {
     const artList = articles.map(a => {
       const colorDetails = a.colors.map(c => {
@@ -1619,7 +1710,7 @@ GUIDELINES:
       {tab === "inventory" && <>
         <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:14,flexWrap:"wrap",gap:8}}>
           <h2 style={{margin:0,fontSize:17,fontWeight:800}}>Inventory</h2>
-          <div style={{display:"flex",gap:6}}><Btn v="secondary" sz="sm" icon={<ImageIcon size={13}/>} onClick={() => setShowCatBanners(true)}>Shop Banners</Btn><Btn v="secondary" sz="sm" icon={<Settings size={13}/>} onClick={() => setShowCats(true)}>Categories</Btn><Btn sz="sm" icon={<Plus size={14}/>} onClick={openAddArt}>New Article</Btn></div>
+          <div style={{display:"flex",gap:6}}><Btn v="secondary" sz="sm" icon={<Grid3X3 size={13}/>} onClick={() => setShowStockView(true)}>Stock View</Btn><Btn v="secondary" sz="sm" icon={<ImageIcon size={13}/>} onClick={() => setShowCatBanners(true)}>Shop Banners</Btn><Btn v="secondary" sz="sm" icon={<Settings size={13}/>} onClick={() => setShowCats(true)}>Categories</Btn><Btn sz="sm" icon={<Plus size={14}/>} onClick={openAddArt}>New Article</Btn></div>
         </div>
         <div className="stat-grid" style={{display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:8,marginBottom:14}}>
           <Stat icon={<Package size={16}/>} label="Articles" value={articles.length} color={S.acc}/>
@@ -1941,6 +2032,7 @@ GUIDELINES:
           <div style={{display:"flex",gap:6,alignItems:"center",flexWrap:"wrap"}}>
             <Tag color={S.amb}>{orders.filter(o=>o.status==="pending").length} Pending</Tag>
             <Tag color={S.grn}>{orders.filter(o=>o.status==="approved").length} Approved</Tag>
+            <Btn sz="sm" icon={<Plus size={13}/>} onClick={()=>{setOrderForm2(blankOF);setShowCreateOrder(true);}}>Create Order</Btn>
             <Btn sz="sm" icon={<ExternalLink size={13}/>} onClick={shareLink} v="secondary">{linkCopied?"Copied! ✓":"Share Shop Link"}</Btn>
             <Btn sz="sm" icon={<KeyRound size={13}/>} onClick={()=>setShowChangePIN(true)} v="secondary">Change PIN</Btn>
           </div>
@@ -1956,9 +2048,10 @@ GUIDELINES:
           <div style={{display:"flex",flexDirection:"column",gap:8}}>
             {orders.map(ord => {
               const isE = expandedOrder === ord.id;
-              const statusColor = {pending:S.amb,approved:S.grn,rejected:S.red}[ord.status];
-              const statusBg = {pending:S.ambL,approved:S.grnL,rejected:S.redL}[ord.status];
-              const StatusIcon = {pending:Clock,approved:CheckCircle,rejected:XCircle}[ord.status];
+              const isManual = ord.type === "manual";
+              const statusColor = {pending:S.amb,approved:S.grn,rejected:S.red,manual:S.pur}[ord.status] || S.pur;
+              const statusBg = {pending:S.ambL,approved:S.grnL,rejected:S.redL,manual:S.purL}[ord.status] || S.purL;
+              const StatusIcon = {pending:Clock,approved:CheckCircle,rejected:XCircle,manual:FileText}[ord.status] || FileText;
               return (
                 <div key={ord.id}>
                   <div style={{background:S.card,borderRadius:isE?"10px 10px 0 0":10,border:`1px solid ${isE?S.bdrD:S.bdr}`,borderBottom:isE?"none":undefined}}>
@@ -2002,8 +2095,11 @@ GUIDELINES:
                           </div>
                         ))}
                       </div>
-                      <div style={{display:"flex",justifyContent:"flex-end",marginTop:10,paddingTop:10,borderTop:`1px solid ${S.bdr}`}}>
+                      <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginTop:10,paddingTop:10,borderTop:`1px solid ${S.bdr}`}}>
                         <span style={{fontWeight:800,fontSize:15,color:S.grn}}>{fmtR(ord.totalAmt)}</span>
+                        <button onClick={()=>printOrderSlip(ord)} style={{display:"flex",alignItems:"center",gap:6,padding:"8px 16px",background:`linear-gradient(135deg,${S.pur},#9333ea)`,border:"none",borderRadius:8,cursor:"pointer",color:"#fff",fontSize:12,fontWeight:700,fontFamily:S.f}}>
+                          <Printer size={14}/>Print / Share
+                        </button>
                       </div>
                     </div>
                   )}
@@ -2380,6 +2476,116 @@ GUIDELINES:
           <Btn onClick={saveChallan} disabled={!chf.customerId || chf.items.length === 0 || chTotQty === 0} icon={<Check size={14}/>}>
             {editCh ? "Update Challan" : "Create & Deduct Stock"}
           </Btn>
+        </div>
+      </Modal>
+
+      {/* Stock View Modal */}
+      <Modal open={showStockView} onClose={()=>setShowStockView(false)} title="Available Stock" sub="Live inventory across all articles, colors and sizes" w={800}>
+        <div style={{display:"flex",gap:8,marginBottom:12,flexWrap:"wrap"}}>
+          <div style={{padding:"8px 14px",background:S.grnL,borderRadius:8,fontSize:12,fontWeight:700,color:S.grn}}>{articles.length} Articles</div>
+          <div style={{padding:"8px 14px",background:S.accL,borderRadius:8,fontSize:12,fontWeight:700,color:S.acc}}>{totalPcs} Total Pcs</div>
+          <div style={{padding:"8px 14px",background:S.ambL,borderRadius:8,fontSize:12,fontWeight:700,color:S.amb}}>{lowStock} Low Stock</div>
+        </div>
+        <div style={{display:"flex",flexDirection:"column",gap:8,maxHeight:"65vh",overflowY:"auto"}}>
+          {[...new Set(articles.map(a=>a.category))].map(cat => {
+            const catArts = articles.filter(a=>a.category===cat);
+            return (
+              <div key={cat}>
+                <div style={{fontSize:11,fontWeight:800,color:S.txt3,textTransform:"uppercase",letterSpacing:1,padding:"6px 0 4px",borderBottom:`2px solid ${S.acc}`,marginBottom:6}}>{cat}</div>
+                {catArts.map(a => {
+                  const tot = artTot(a);
+                  return (
+                    <div key={a.id} style={{background:S.bg,borderRadius:10,padding:12,border:`1px solid ${tot===0?S.red+"40":S.bdr}`,marginBottom:6}}>
+                      <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:8}}>
+                        <div>
+                          <span style={{fontSize:13,fontWeight:700}}>{a.name}</span>
+                          <span style={{fontSize:10,color:S.txt3,fontFamily:S.fm,marginLeft:8}}>{a.skuId}</span>
+                          <span style={{fontSize:10,color:S.txt2,marginLeft:8}}>{a.fabricQuality}</span>
+                        </div>
+                        <span style={{fontSize:14,fontWeight:800,color:tot===0?S.red:tot<=10?S.amb:S.grn}}>{tot} pcs</span>
+                      </div>
+                      {a.colors.map((c,ci) => {
+                        const cTot = Object.values(c.sizes).reduce((s,v)=>s+(v.qty||0),0);
+                        if (cTot === 0) return null;
+                        return (
+                          <div key={ci} style={{display:"flex",alignItems:"center",gap:8,marginBottom:4,padding:"6px 8px",background:S.card,borderRadius:8,flexWrap:"wrap"}}>
+                            {c.image && <img src={c.image} alt="" style={{width:28,height:28,borderRadius:5,objectFit:"cover"}}/>}
+                            <ColorDot name={c.name}/>
+                            <div style={{display:"flex",gap:4,flexWrap:"wrap",flex:1}}>
+                              {a.selectedSizes.map(sz => {
+                                const q = c.sizes[sz]?.qty||0;
+                                if (q===0) return null;
+                                return <span key={sz} style={{fontSize:11,fontWeight:700,background:q<=3?S.redL:q<=5?S.ambL:S.grnL,color:q<=3?S.red:q<=5?S.amb:S.grn,padding:"2px 8px",borderRadius:6}}>{sz}: {q}</span>;
+                              })}
+                            </div>
+                            <span style={{fontSize:11,fontWeight:700,color:S.txt2}}>{cTot} pcs</span>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  );
+                })}
+              </div>
+            );
+          })}
+        </div>
+      </Modal>
+
+      {/* Create Manual Order Modal */}
+      <Modal open={showCreateOrder} onClose={()=>setShowCreateOrder(false)} title="Create Customer Order" sub="Create a proforma order to share with customer — no stock deducted" w={720}>
+        <div style={{background:S.purL,borderRadius:8,padding:"8px 12px",marginBottom:14,fontSize:12,color:S.pur,fontWeight:600}}>
+          📋 This creates a shareable order slip. Stock is NOT deducted. Use Challans to deduct stock.
+        </div>
+        <div style={{marginBottom:14}}>
+          <Sel label="① Customer" options={customers.map(c=>({v:c.id,l:`${c.name} — ${c.phone}`}))} placeholder="Choose customer..." value={orderForm2.customerId} onChange={e=>setOrderForm2({...orderForm2,customerId:e.target.value})}/>
+        </div>
+        <Inp label="Remarks / Note" placeholder="e.g. Sample order, Approval pending..." value={orderForm2.remarks} onChange={e=>setOrderForm2({...orderForm2,remarks:e.target.value})} cStyle={{marginBottom:14}}/>
+        <div>
+          <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:10}}>
+            <label style={{fontSize:10,fontWeight:700,color:S.txt3,letterSpacing:.8,textTransform:"uppercase"}}>② Items</label>
+            <Btn sz="sm" icon={<Plus size={13}/>} onClick={()=>setOrderForm2({...orderForm2,items:[...orderForm2.items,{articleId:"",colorIdx:"",sizes:{}}]})}>Add Item</Btn>
+          </div>
+          {orderForm2.items.length===0 && <div style={{padding:24,background:S.bg,borderRadius:10,textAlign:"center",color:S.txt2,fontSize:13,border:`2px dashed ${S.bdr}`}}><Package size={24} style={{margin:"0 auto 8px",display:"block",color:S.txt3}}/>Click "Add Item" to add articles</div>}
+          {orderForm2.items.map((it,ii)=>{
+            const art = articles.find(a=>a.id===it.articleId);
+            const col = art?.colors[Number(it.colorIdx)];
+            return (
+              <div key={ii} style={{background:S.bg,borderRadius:12,border:`1px solid ${S.bdr}`,padding:14,marginBottom:10}}>
+                <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:10}}>
+                  <span style={{fontSize:13,fontWeight:700,color:S.acc}}>Item #{ii+1}</span>
+                  <button onClick={()=>setOrderForm2({...orderForm2,items:orderForm2.items.filter((_,j)=>j!==ii)})} style={{background:S.redL,border:"none",borderRadius:6,padding:5,cursor:"pointer",display:"flex",color:S.red}}><Trash2 size={13}/></button>
+                </div>
+                <div className="form-grid2" style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10,marginBottom:col?12:0}}>
+                  <SearchSel label="Article" options={articles.map(a=>({v:a.id,l:`${a.name} (${a.skuId})`}))} placeholder="Search article..." value={it.articleId} onChange={v=>{const ni=[...orderForm2.items];ni[ii]={articleId:v,colorIdx:"",sizes:{}};setOrderForm2({...orderForm2,items:ni});}}/>
+                  {art && <Sel label="Color" options={art.colors.map((c,ci)=>({v:String(ci),l:c.name}))} placeholder="Select color..." value={it.colorIdx} onChange={e=>{const ni=[...orderForm2.items];ni[ii]={...ni[ii],colorIdx:e.target.value,sizes:{}};setOrderForm2({...orderForm2,items:ni});}}/>}
+                </div>
+                {col && art && (
+                  <div style={{display:"flex",gap:8,flexWrap:"wrap"}}>
+                    {art.selectedSizes.map(sz=>{
+                      const qty = it.sizes[sz]||0;
+                      return (
+                        <div key={sz} style={{background:S.card,borderRadius:10,border:`2px solid ${qty>0?S.pur:S.bdr}`,padding:"8px 10px",textAlign:"center",minWidth:72}}>
+                          <div style={{fontSize:13,fontWeight:800,color:qty>0?S.pur:S.txt2,marginBottom:4}}>{sz}</div>
+                          <input type="number" min="0" placeholder="0" value={it.sizes[sz]||""} onChange={e=>{const ni=[...orderForm2.items];ni[ii]={...ni[ii],sizes:{...ni[ii].sizes,[sz]:Math.max(0,Number(e.target.value)||0)}};setOrderForm2({...orderForm2,items:ni});}} style={{width:"100%",textAlign:"center",background:"transparent",border:"none",outline:"none",color:S.txt,fontFamily:S.fm,fontSize:20,fontWeight:800,padding:"2px 0"}}/>
+                          <div style={{fontSize:10,color:S.grn,fontFamily:S.fm}}>₹{col.sizes[sz]?.price||0}</div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+            );
+          })}
+        </div>
+        {orderForm2.items.some(it=>Object.values(it.sizes).some(q=>q>0)) && (
+          <div style={{padding:"10px 14px",background:S.purL,borderRadius:10,marginTop:8,display:"flex",justifyContent:"flex-end",gap:20}}>
+            <div style={{textAlign:"center"}}><div style={{fontSize:9,fontWeight:700,color:S.txt3,textTransform:"uppercase"}}>Total Qty</div><div style={{fontSize:18,fontWeight:800,color:S.pur,fontFamily:S.fm}}>{orderForm2.items.reduce((s,it)=>s+Object.values(it.sizes).reduce((ss,q)=>ss+q,0),0)}</div></div>
+            <div style={{textAlign:"center"}}><div style={{fontSize:9,fontWeight:700,color:S.txt3,textTransform:"uppercase"}}>Total Amt</div><div style={{fontSize:18,fontWeight:800,color:S.grn,fontFamily:S.fm}}>{fmtR(orderForm2.items.reduce((s,it)=>{const art=articles.find(a=>a.id===it.articleId);const col=art?.colors[Number(it.colorIdx)];return s+Object.entries(it.sizes).reduce((ss,[sz,q])=>ss+q*(col?.sizes[sz]?.price||0),0);},0))}</div></div>
+          </div>
+        )}
+        <div style={{display:"flex",justifyContent:"flex-end",gap:8,marginTop:16,paddingTop:14,borderTop:`1px solid ${S.bdr}`}}>
+          <Btn v="secondary" onClick={()=>setShowCreateOrder(false)}>Cancel</Btn>
+          <Btn onClick={saveManualOrder} disabled={!orderForm2.customerId||orderForm2.items.length===0} icon={<Printer size={14}/>} style={{background:`linear-gradient(135deg,${S.pur},#9333ea)`}}>Save & Print Order</Btn>
         </div>
       </Modal>
 
