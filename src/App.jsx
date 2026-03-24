@@ -605,8 +605,9 @@ export default function App() {
   const [expandedOrder, setExpandedOrder] = useState(null);
   const [showConvertOrder, setShowConvertOrder] = useState(false);
   const [convertingOrder, setConvertingOrder] = useState(null);
-  const [convertSelItems, setConvertSelItems] = useState({}); // {idx: true/false}
+  const [convertSelItems, setConvertSelItems] = useState({});
   const [showCreateOrder, setShowCreateOrder] = useState(false);
+  const [showStockView, setShowStockView] = useState(false);
   const blankOF = {customerId:"", remarks:"", items:[]};
   const [orderForm2, setOrderForm2] = useState(blankOF);
 
