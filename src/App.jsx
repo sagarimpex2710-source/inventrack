@@ -603,7 +603,9 @@ export default function App() {
   // ── Orders State ──
   const [orders, setOrders] = useState([]);
   const [expandedOrder, setExpandedOrder] = useState(null);
-  const [showStockView, setShowStockView] = useState(false);
+  const [showConvertOrder, setShowConvertOrder] = useState(false);
+  const [convertingOrder, setConvertingOrder] = useState(null);
+  const [convertSelItems, setConvertSelItems] = useState({}); // {idx: true/false}
   const [showCreateOrder, setShowCreateOrder] = useState(false);
   const blankOF = {customerId:"", remarks:"", items:[]};
   const [orderForm2, setOrderForm2] = useState(blankOF);
@@ -1392,6 +1394,41 @@ body{font-family:'Segoe UI',sans-serif;background:#f5f6fa;display:flex;flex-dire
     setTimeout(()=>printOrderSlip(ord),300);
   };
 
+  const openConvertOrder = (ord) => {
+    setConvertingOrder(ord);
+    // Pre-select all items by default
+    const sel = {};
+    ord.items.forEach((_,i) => sel[i] = true);
+    setConvertSelItems(sel);
+    setShowConvertOrder(true);
+  };
+
+  const doConvertToChallan = () => {
+    if (!convertingOrder) return;
+    const cust = customers.find(c => c.name === convertingOrder.customer?.name || c.phone === convertingOrder.customer?.phone);
+    const selectedItems = convertingOrder.items.filter((_,i) => convertSelItems[i]);
+    if (selectedItems.length === 0) return;
+    // Build chf items from selected order items
+    const chfItems = selectedItems.map(it => {
+      const art = articles.find(a => a.id === it.articleId);
+      if (!art) return null;
+      const sizes = {};
+      const prices = {};
+      it.sizes.forEach(sz => { sizes[sz.size] = sz.qty; prices[sz.size] = sz.price; });
+      return { articleId: it.articleId, colorIdx: String(it.colorIdx), sizes, prices };
+    }).filter(Boolean);
+    setEditCh(null);
+    setEditChArts(null);
+    setChf({
+      customerId: cust?.id || "",
+      lrNumber: "",
+      remarks: `Converted from ${convertingOrder.number}`,
+      items: chfItems
+    });
+    setShowConvertOrder(false);
+    setShowChModal(true);
+  };
+
   const buildSystemPrompt = () => {
     const artList = articles.map(a => {
       const colorDetails = a.colors.map(c => {
@@ -2100,7 +2137,8 @@ GUIDELINES:
                       </div>
                       <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginTop:10,paddingTop:10,borderTop:`1px solid ${S.bdr}`}}>
                         <span style={{fontWeight:800,fontSize:15,color:S.grn}}>{fmtR(ord.totalAmt)}</span>
-                        <div style={{display:"flex",gap:6}}>
+                        <div style={{display:"flex",gap:6,flexWrap:"wrap"}}>
+                          {ord.items?.length > 0 && <button onClick={()=>openConvertOrder(ord)} style={{display:"flex",alignItems:"center",gap:6,padding:"8px 14px",background:S.grnL,border:`1px solid ${S.grn}40`,borderRadius:8,cursor:"pointer",color:S.grn,fontSize:12,fontWeight:700,fontFamily:S.f}}><FileText size={14}/>Convert to Challan</button>}
                           <button onClick={()=>printOrderSlip(ord)} style={{display:"flex",alignItems:"center",gap:6,padding:"8px 16px",background:`linear-gradient(135deg,${S.pur},#9333ea)`,border:"none",borderRadius:8,cursor:"pointer",color:"#fff",fontSize:12,fontWeight:700,fontFamily:S.f}}>
                             <Printer size={14}/>Print / Share
                           </button>
@@ -2601,6 +2639,52 @@ GUIDELINES:
           <Btn v="secondary" onClick={()=>setShowCreateOrder(false)}>Cancel</Btn>
           <Btn onClick={saveManualOrder} disabled={!orderForm2.customerId||orderForm2.items.length===0} icon={<Printer size={14}/>} style={{background:`linear-gradient(135deg,${S.pur},#9333ea)`}}>Save & Print Order</Btn>
         </div>
+      </Modal>
+
+      {/* Convert Order to Challan Modal */}
+      <Modal open={showConvertOrder} onClose={()=>setShowConvertOrder(false)} title="Convert to Delivery Challan" sub="Select which items to include — stock will be deducted" w={580}>
+        {convertingOrder && <>
+          <div style={{background:S.grnL,borderRadius:10,padding:"10px 14px",marginBottom:14,display:"flex",alignItems:"center",gap:10,fontSize:12}}>
+            <FileText size={16} color={S.grn}/>
+            <div><strong>{convertingOrder.number}</strong> · {convertingOrder.customer?.name} · {convertingOrder.totalQty} pcs · {fmtR(convertingOrder.totalAmt)}</div>
+          </div>
+          <div style={{fontSize:11,fontWeight:700,color:S.txt3,textTransform:"uppercase",letterSpacing:.8,marginBottom:8}}>Select Items to Include</div>
+          <div style={{display:"flex",flexDirection:"column",gap:8,marginBottom:16}}>
+            {convertingOrder.items.map((it,i) => {
+              const checked = !!convertSelItems[i];
+              return (
+                <div key={i} onClick={()=>setConvertSelItems(prev=>({...prev,[i]:!prev[i]}))} style={{display:"flex",alignItems:"center",gap:12,padding:"12px 14px",background:checked?S.grnL:S.bg,borderRadius:10,border:`2px solid ${checked?S.grn:S.bdr}`,cursor:"pointer",transition:"all .15s"}}>
+                  <div style={{width:22,height:22,borderRadius:6,border:`2px solid ${checked?S.grn:S.bdr}`,background:checked?S.grn:"#fff",display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0}}>
+                    {checked && <Check size={13} color="#fff"/>}
+                  </div>
+                  {it.colorImage && <img src={it.colorImage} alt="" style={{width:40,height:40,borderRadius:8,objectFit:"cover",flexShrink:0}}/>}
+                  <div style={{flex:1,minWidth:0}}>
+                    <div style={{fontSize:13,fontWeight:700}}>{it.articleName}</div>
+                    <div style={{fontSize:11,color:S.txt2,marginTop:2}}>{it.colorName} · {it.sizes.map(sz=>`${sz.size}×${sz.qty}`).join(", ")}</div>
+                  </div>
+                  <div style={{textAlign:"right",flexShrink:0}}>
+                    <div style={{fontSize:12,fontWeight:700,color:S.grn}}>{fmtR(it.sizes.reduce((s,sz)=>s+sz.amount,0))}</div>
+                    <div style={{fontSize:11,color:S.txt2}}>{it.sizes.reduce((s,sz)=>s+sz.qty,0)} pcs</div>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+          <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",padding:"10px 14px",background:S.accL,borderRadius:10,marginBottom:14}}>
+            <span style={{fontSize:12,color:S.txt2}}>{Object.values(convertSelItems).filter(Boolean).length} of {convertingOrder.items.length} items selected</span>
+            <div style={{display:"flex",gap:8}}>
+              <button onClick={()=>{const a={};convertingOrder.items.forEach((_,i)=>a[i]=true);setConvertSelItems(a);}} style={{fontSize:11,fontWeight:600,color:S.acc,background:"none",border:"none",cursor:"pointer",fontFamily:S.f}}>Select All</button>
+              <button onClick={()=>setConvertSelItems({})} style={{fontSize:11,fontWeight:600,color:S.txt2,background:"none",border:"none",cursor:"pointer",fontFamily:S.f}}>Clear</button>
+            </div>
+          </div>
+          <div style={{background:S.ambL,borderRadius:8,padding:"8px 12px",marginBottom:14,fontSize:11,color:S.amb}}>
+            ⚠️ Stock will be deducted when challan is saved. You can edit quantities in the challan form.
+          </div>
+          <div style={{display:"flex",justifyContent:"flex-end",gap:8}}>
+            <Btn v="secondary" onClick={()=>setShowConvertOrder(false)}>Cancel</Btn>
+            <Btn onClick={doConvertToChallan} disabled={Object.values(convertSelItems).filter(Boolean).length===0} icon={<FileText size={14}/>}>Open in Challan Form</Btn>
+          </div>
+        </>}
       </Modal>
 
       <ConfirmDialog
