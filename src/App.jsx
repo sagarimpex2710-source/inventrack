@@ -1311,12 +1311,13 @@ body{font-family:'Segoe UI',sans-serif;background:#f5f6fa;display:flex;flex-dire
   const printOrderSlip = (ord) => {
     const rows = ord.items.map((it,idx) => {
       const bg = idx%2===0?"#fff":"#f9fafb";
+      const sizeCells = it.sizes.map(sz=>`<span style="display:inline-block;background:#eef1ff;border-radius:4px;padding:3px 8px;margin:2px;font-size:11px;text-align:center"><div style="font-weight:800;color:#4361ee">${sz.size}</div><div style="font-weight:700;color:#1a1a2e">${sz.qty} pcs</div><div style="color:#0d9f6e;font-size:10px">Rs.${Number(sz.price||0).toLocaleString("en-IN")}</div></span>`).join("");
       return `<tr style="background:${bg}">
         <td style="padding:6px 10px;color:#9ca3af;font-size:11px">${idx+1}</td>
         <td style="padding:6px 10px"><div style="font-weight:700;font-size:12px">${it.articleName}</div><div style="font-size:10px;color:#9ca3af">${it.skuId||""}</div></td>
         <td style="padding:6px 10px"><div style="display:flex;align-items:center;gap:6px">${it.colorImage?`<img src="${it.colorImage}" style="width:36px;height:36px;border-radius:6px;object-fit:cover"/>`:""}
           <span style="font-size:12px;font-weight:600">${it.colorName}</span></div></td>
-        <td style="padding:6px 10px">${it.sizes.map(sz=>`<span style="display:inline-block;background:#eef1ff;border-radius:4px;padding:2px 7px;margin:2px;font-size:11px;font-weight:700;color:#4361ee">${sz.size}: ${sz.qty}</span>`).join("")}</td>
+        <td style="padding:6px 10px">${sizeCells}</td>
         <td style="padding:6px 10px;text-align:center;font-weight:700;font-size:13px">${it.sizes.reduce((s,sz)=>s+sz.qty,0)}</td>
         <td style="padding:6px 10px;text-align:right;font-weight:700;font-size:12px;color:#0d9f6e">Rs.${Number(it.sizes.reduce((s,sz)=>s+sz.amount,0)).toLocaleString("en-IN")}</td>
       </tr>`;
@@ -1354,7 +1355,7 @@ body{font-family:'Segoe UI',sans-serif;background:#f5f6fa;display:flex;flex-dire
       <th style="padding:8px 10px;text-align:left;font-size:9px;text-transform:uppercase;color:#9ca3af;font-weight:700">#</th>
       <th style="padding:8px 10px;text-align:left;font-size:9px;text-transform:uppercase;color:#9ca3af;font-weight:700">Article</th>
       <th style="padding:8px 10px;text-align:left;font-size:9px;text-transform:uppercase;color:#9ca3af;font-weight:700">Color</th>
-      <th style="padding:8px 10px;text-align:left;font-size:9px;text-transform:uppercase;color:#9ca3af;font-weight:700">Sizes & Qty</th>
+      <th style="padding:8px 10px;text-align:left;font-size:9px;text-transform:uppercase;color:#9ca3af;font-weight:700">Sizes / Qty / Rate</th>
       <th style="padding:8px 10px;text-align:center;font-size:9px;text-transform:uppercase;color:#9ca3af;font-weight:700">Pcs</th>
       <th style="padding:8px 10px;text-align:right;font-size:9px;text-transform:uppercase;color:#9ca3af;font-weight:700">Amount</th>
     </tr></thead>
@@ -1387,7 +1388,7 @@ body{font-family:'Segoe UI',sans-serif;background:#f5f6fa;display:flex;flex-dire
     setShowCreateOrder(true);
   };
 
-  const saveManualOrder = () => {
+  const saveManualOrder = (printAfter=false) => {
     if (!orderForm2.customerId || orderForm2.items.length === 0) return;
     const cust = customers.find(c => c.id === orderForm2.customerId);
     const valid = orderForm2.items.filter(it => it.articleId && it.colorIdx !== "" && Object.values(it.sizes).some(q=>q>0));
@@ -1417,7 +1418,7 @@ body{font-family:'Segoe UI',sans-serif;background:#f5f6fa;display:flex;flex-dire
     setShowCreateOrder(false);
     setEditingOrder(null);
     setOrderForm2(blankOF);
-    if (!editingOrder) setTimeout(()=>printOrderSlip(ord),300);
+    if (printAfter) setTimeout(()=>printOrderSlip(ord),300);
   };
 
   const openConvertOrder = (ord) => {
@@ -2891,7 +2892,8 @@ GUIDELINES:
         )}
         <div style={{display:"flex",justifyContent:"flex-end",gap:8,marginTop:16,paddingTop:14,borderTop:`1px solid ${S.bdr}`}}>
           <Btn v="secondary" onClick={()=>{setShowCreateOrder(false);setEditingOrder(null);setOrderForm2(blankOF);}}>Cancel</Btn>
-          <Btn onClick={saveManualOrder} disabled={!orderForm2.customerId||orderForm2.items.length===0} icon={editingOrder?<Check size={14}/>:<Printer size={14}/>} style={{background:`linear-gradient(135deg,${S.pur},#9333ea)`}}>{editingOrder?"Update Order":"Save & Print Order"}</Btn>
+          <Btn onClick={saveManualOrder} disabled={!orderForm2.customerId||orderForm2.items.length===0} icon={<Check size={14}/>}>{editingOrder?"Update Order":"Save Order"}</Btn>
+          <Btn onClick={()=>saveManualOrder(true)} disabled={!orderForm2.customerId||orderForm2.items.length===0} icon={<Printer size={14}/>} style={{background:`linear-gradient(135deg,${S.pur},#9333ea)`}}>{editingOrder?"Update & Print":"Save & Print"}</Btn>
         </div>
       </Modal>
 
