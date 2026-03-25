@@ -1311,15 +1311,19 @@ body{font-family:'Segoe UI',sans-serif;background:#f5f6fa;display:flex;flex-dire
   const printOrderSlip = (ord) => {
     const rows = ord.items.map((it,idx) => {
       const bg = idx%2===0?"#fff":"#f9fafb";
-      const sizeCells = it.sizes.map(sz=>`<span style="display:inline-block;background:#eef1ff;border-radius:4px;padding:3px 8px;margin:2px;font-size:11px;text-align:center"><div style="font-weight:800;color:#4361ee">${sz.size}</div><div style="font-weight:700;color:#1a1a2e">${sz.qty} pcs</div><div style="color:#0d9f6e;font-size:10px">Rs.${Number(sz.price||0).toLocaleString("en-IN")}</div></span>`).join("");
+      // Normalize: shop orders use flat {size,qty,price,amount}, manual orders use sizes:[...]
+      const sizes = Array.isArray(it.sizes) ? it.sizes : [{size:it.size, qty:it.qty, price:it.price||0, amount:it.amount||0}];
+      const sizeCells = sizes.map(sz=>`<span style="display:inline-block;background:#eef1ff;border-radius:4px;padding:3px 8px;margin:2px;font-size:11px;text-align:center"><div style="font-weight:800;color:#4361ee">${sz.size}</div><div style="font-weight:700;color:#1a1a2e">${sz.qty} pcs</div><div style="color:#0d9f6e;font-size:10px">Rs.${Number(sz.price||0).toLocaleString("en-IN")}</div></span>`).join("");
+      const totalQty = sizes.reduce((s,sz)=>s+sz.qty,0);
+      const totalAmt = sizes.reduce((s,sz)=>s+(sz.amount||0),0);
       return `<tr style="background:${bg}">
         <td style="padding:6px 10px;color:#9ca3af;font-size:11px">${idx+1}</td>
         <td style="padding:6px 10px"><div style="font-weight:700;font-size:12px">${it.articleName}</div><div style="font-size:10px;color:#9ca3af">${it.skuId||""}</div></td>
         <td style="padding:6px 10px"><div style="display:flex;align-items:center;gap:6px">${it.colorImage?`<img src="${it.colorImage}" style="width:36px;height:36px;border-radius:6px;object-fit:cover"/>`:""}
           <span style="font-size:12px;font-weight:600">${it.colorName}</span></div></td>
         <td style="padding:6px 10px">${sizeCells}</td>
-        <td style="padding:6px 10px;text-align:center;font-weight:700;font-size:13px">${it.sizes.reduce((s,sz)=>s+sz.qty,0)}</td>
-        <td style="padding:6px 10px;text-align:right;font-weight:700;font-size:12px;color:#0d9f6e">Rs.${Number(it.sizes.reduce((s,sz)=>s+sz.amount,0)).toLocaleString("en-IN")}</td>
+        <td style="padding:6px 10px;text-align:center;font-weight:700;font-size:13px">${totalQty}</td>
+        <td style="padding:6px 10px;text-align:right;font-weight:700;font-size:12px;color:#0d9f6e">Rs.${Number(totalAmt).toLocaleString("en-IN")}</td>
       </tr>`;
     }).join("");
     const html = `<!DOCTYPE html><html><head><title>Order ${ord.number}</title>
@@ -2176,22 +2180,30 @@ GUIDELINES:
                       <div style={{display:"flex",flexDirection:"column",gap:8}}>
                         {ord.items.map((it,i) => {
                           const isDelivered = !!it.delivered;
-                          const sizes = Array.isArray(it.sizes) ? it.sizes : [{size:it.size,qty:it.qty,price:it.price,amount:it.amount}];
+                          const isManualOrd = ord.type === "manual";
+                          const sizes = Array.isArray(it.sizes) ? it.sizes : [{size:it.size, qty:it.qty, price:it.price||0, amount:it.amount||0}];
                           return (
                             <div key={i} style={{background:isDelivered?S.grnL:S.bg,borderRadius:10,padding:12,border:`2px solid ${isDelivered?S.grn+"50":S.bdr}`,display:"flex",alignItems:"center",gap:10,opacity:isDelivered?0.85:1,transition:"all .2s"}}>
                               {it.colorImage && <img src={it.colorImage} alt="" style={{width:44,height:44,borderRadius:8,objectFit:"cover",flexShrink:0,filter:isDelivered?"grayscale(30%)":"none"}}/>}
                               <div style={{flex:1}}>
-                                <div style={{display:"flex",alignItems:"center",gap:6}}>
+                                <div style={{display:"flex",alignItems:"center",gap:6,flexWrap:"wrap"}}>
                                   <span style={{fontSize:13,fontWeight:700,color:isDelivered?S.grn:S.txt}}>{it.articleName}</span>
-                                  {isDelivered && <span style={{background:S.grn,color:"#fff",fontSize:9,fontWeight:800,padding:"2px 7px",borderRadius:20,letterSpacing:.5}}>✓ DELIVERED</span>}
-                                  {!isDelivered && <span style={{background:S.amb,color:"#fff",fontSize:9,fontWeight:800,padding:"2px 7px",borderRadius:20,letterSpacing:.5}}>PENDING</span>}
+                                  {isManualOrd && isDelivered && <span style={{background:S.grn,color:"#fff",fontSize:9,fontWeight:800,padding:"2px 7px",borderRadius:20,letterSpacing:.5}}>✓ DELIVERED</span>}
+                                  {isManualOrd && !isDelivered && <span style={{background:S.amb,color:"#fff",fontSize:9,fontWeight:800,padding:"2px 7px",borderRadius:20,letterSpacing:.5}}>PENDING</span>}
                                 </div>
                                 <div style={{display:"flex",gap:6,alignItems:"center",marginTop:4,flexWrap:"wrap"}}>
                                   <ColorDot name={it.colorName}/>
                                   {sizes.map((sz,si)=>(
-                                    <span key={si} style={{fontSize:11,fontWeight:700,background:isDelivered?"#d1fae5":"#eef1ff",color:isDelivered?S.grn:S.acc,padding:"2px 7px",borderRadius:6}}>{sz.size}: {sz.qty}</span>
+                                    <div key={si} style={{background:isDelivered?"#d1fae5":"#eef1ff",borderRadius:8,padding:"4px 8px",textAlign:"center",border:`1px solid ${isDelivered?S.grn+"30":S.acc+"20"}`}}>
+                                      <div style={{fontSize:11,fontWeight:800,color:isDelivered?S.grn:S.acc}}>{sz.size}</div>
+                                      <div style={{fontSize:12,fontWeight:700,color:S.txt}}>{sz.qty} pcs</div>
+                                      <div style={{fontSize:10,fontWeight:600,color:S.grn}}>{fmtS(sz.price||0)}</div>
+                                    </div>
                                   ))}
-                                  <span style={{fontSize:12,fontWeight:700,color:S.grn,marginLeft:4}}>{fmtR(sizes.reduce((s,sz)=>s+(sz.amount||0),0))}</span>
+                                  <div style={{marginLeft:4,paddingLeft:8,borderLeft:`2px solid ${S.bdr}`}}>
+                                    <div style={{fontSize:10,color:S.txt3}}>Total</div>
+                                    <div style={{fontSize:13,fontWeight:800,color:S.grn}}>{fmtR(sizes.reduce((s,sz)=>s+(sz.amount||0),0))}</div>
+                                  </div>
                                 </div>
                               </div>
                             </div>
