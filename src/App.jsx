@@ -1057,8 +1057,10 @@ export default function App() {
       return copy;
     });
     const updChallans = editCh ? challans.map(c => c.id === editCh.id ? challan : c) : [challan, ...challans];
-    setArticlesDB(updArts);
-    setChallansDB(updChallans);
+    // Save both together in ONE scheduleSave to avoid race condition
+    setArticles(updArts);
+    setChallans(updChallans);
+    scheduleSave({ articles: updArts, challans: updChallans });
     setEditChArts(null); // clear temp restored arts
     setShowChModal(false);
     setChf({...blankCh});
@@ -1081,8 +1083,10 @@ export default function App() {
           });
           return copy;
         });
-        setArticlesDB(restoredArts);
-        setChallansDB(challans.filter(c => c.id !== ch.id));
+        const updChallans = challans.filter(c => c.id !== ch.id);
+        setArticles(restoredArts);
+        setChallans(updChallans);
+        scheduleSave({ articles: restoredArts, challans: updChallans });
         if (expandedCh === ch.id) setExpandedCh(null);
       }
     );
