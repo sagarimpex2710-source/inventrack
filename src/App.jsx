@@ -1475,87 +1475,117 @@ body{font-family:'Segoe UI',sans-serif;background:#f5f6fa;display:flex;flex-dire
   };
 
   const printArticleReport = (artEntries, allTxns) => {
-    // Build colour×size matrix for each article
-    const rows = artEntries.map(art => {
-      // Collect all colors and sizes used
-      const colorMap = {}; // colorName → {sizes:{sz→qty}, totalQty, parties:[]}
-      Object.values(art.parties).forEach(p => {
-        p.txns.forEach(t => {
-          const c = t.colorName;
-          if (!colorMap[c]) colorMap[c] = {sizes:{}, totalQty:0, totalAmt:0, parties:new Set()};
-          colorMap[c].parties.add(p.party);
-          t.sizes.forEach(sz => {
-            colorMap[c].sizes[sz.size] = (colorMap[c].sizes[sz.size]||0) + sz.qty;
-            colorMap[c].totalQty += sz.qty;
-            colorMap[c].totalAmt += (sz.amount||0);
-          });
-        });
-      });
-      // Collect all unique sizes across all colors
-      const allSizes = [...new Set(Object.values(colorMap).flatMap(c=>Object.keys(c.sizes)))].sort((a,b)=>{
-        const order=["S","M","L","XL","XXL","3XL","4XL","5XL","6XL","7XL"];
-        return (order.indexOf(a)===-1?99:order.indexOf(a))-(order.indexOf(b)===-1?99:order.indexOf(b));
-      });
-      const totalQty = Object.values(colorMap).reduce((s,c)=>s+c.totalQty,0);
-      const totalAmt = Object.values(colorMap).reduce((s,c)=>s+c.totalAmt,0);
-      const numParties = Object.keys(art.parties).length;
+    const sizeOrder = ["S","M","L","XL","XXL","3XL","4XL","5XL","6XL","7XL"];
+    const sortSizes = sizes => [...sizes].sort((a,b)=>(sizeOrder.indexOf(a)===-1?99:sizeOrder.indexOf(a))-(sizeOrder.indexOf(b)===-1?99:sizeOrder.indexOf(b)));
 
-      const sizeHeaders = allSizes.map(sz=>`<th style="padding:5px 8px;text-align:center;font-size:9px;background:#1e293b;color:#94a3b8;font-weight:700;min-width:40px">${sz}</th>`).join("");
-      const colorRows = Object.entries(colorMap).map(([color,data],ci)=>{
-        const bg = ci%2===0?"#fff":"#f8fafc";
-        const sizeCells = allSizes.map(sz=>{
-          const q = data.sizes[sz]||0;
-          return `<td style="padding:5px 8px;text-align:center;font-size:12px;font-weight:${q>0?"700":"400"};color:${q>0?"#1a1a2e":"#d1d5db"};background:${q>0?"#eef1ff":"transparent"};border-radius:4px">${q>0?q:"—"}</td>`;
+    const articleBlocks = artEntries.map(art => {
+      // Collect all sizes across article
+      const allSizesSet = new Set();
+      Object.values(art.parties).forEach(p => p.txns.forEach(t => t.sizes.forEach(sz => allSizesSet.add(sz.size))));
+      const allSizes = sortSizes([...allSizesSet]);
+
+      // Party rows: for each party → colors → sizes
+      let artTotalQty = 0, artTotalAmt = 0;
+      const partyBlocks = Object.values(art.parties).map((p,pi) => {
+        // Group txns by color
+        const colorMap = {};
+        p.txns.forEach(t => {
+          if (!colorMap[t.colorName]) colorMap[t.colorName] = {sizes:{}, qty:0, amt:0, refs:[]};
+          t.sizes.forEach(sz => {
+            colorMap[t.colorName].sizes[sz.size] = (colorMap[t.colorName].sizes[sz.size]||0) + sz.qty;
+            colorMap[t.colorName].qty += sz.qty;
+            colorMap[t.colorName].amt += (sz.amount||0);
+          });
+          colorMap[t.colorName].refs.push(`${t.number}(${t.type==="challan"?"DC":"ORD"})`);
+        });
+
+        const partyTotalQty = Object.values(colorMap).reduce((s,c)=>s+c.qty,0);
+        const partyTotalAmt = Object.values(colorMap).reduce((s,c)=>s+c.amt,0);
+        artTotalQty += partyTotalQty;
+        artTotalAmt += partyTotalAmt;
+
+        const colorRows = Object.entries(colorMap).map(([color, data], ci) => {
+          const h = color.split("").reduce((a,c)=>a+c.charCodeAt(0),0)%360;
+          const sizeCells = allSizes.map(sz => {
+            const q = data.sizes[sz]||0;
+            return `<td style="padding:5px 8px;text-align:center;font-size:13px;font-weight:${q>0?"800":"400"};color:${q>0?"#1e293b":"#cbd5e1"};background:${q>0?"#dbeafe":"transparent"}">${q>0?q:"—"}</td>`;
+          }).join("");
+          return `<tr style="background:${ci%2===0?"#fff":"#f8fafc"}">
+            <td style="padding:4px 8px 4px 24px;font-size:11px">
+              <div style="display:flex;align-items:center;gap:5px">
+                <div style="width:10px;height:10px;border-radius:50%;background:hsl(${h},55%,55%);flex-shrink:0"></div>
+                <span style="font-weight:600;color:#374151">${color}</span>
+                <span style="color:#9ca3af;font-size:9px">${data.refs.slice(0,2).join(", ")}${data.refs.length>2?` +${data.refs.length-2}`:""}</span>
+              </div>
+            </td>
+            ${sizeCells}
+            <td style="padding:5px 8px;text-align:center;font-weight:700;font-size:12px;color:#0891b2">${data.qty}</td>
+            <td style="padding:5px 8px;text-align:right;font-size:11px;font-weight:600;color:#0d9f6e">Rs.${Number(data.amt).toLocaleString("en-IN")}</td>
+          </tr>`;
         }).join("");
-        const h = color.split("").reduce((a,c)=>a+c.charCodeAt(0),0)%360;
-        return `<tr style="background:${bg}">
-          <td style="padding:6px 10px">
-            <div style="display:flex;align-items:center;gap:6px">
-              <div style="width:12px;height:12px;border-radius:50%;background:hsl(${h},55%,55%);flex-shrink:0"></div>
-              <span style="font-size:12px;font-weight:600">${color}</span>
-            </div>
-            <div style="font-size:10px;color:#9ca3af;margin-top:2px">${[...data.parties].join(", ")}</div>
-          </td>
-          ${sizeCells}
-          <td style="padding:5px 8px;text-align:center;font-weight:800;font-size:13px;color:#0891b2">${data.totalQty}</td>
-          <td style="padding:5px 8px;text-align:right;font-weight:700;font-size:11px;color:#0d9f6e">Rs.${Number(data.totalAmt).toLocaleString("en-IN")}</td>
-        </tr>`;
+
+        // Party subtotal row
+        const partySubtotals = allSizes.map(sz => {
+          const q = Object.values(colorMap).reduce((s,c)=>s+(c.sizes[sz]||0),0);
+          return `<td style="padding:5px 8px;text-align:center;font-weight:800;font-size:12px;color:#4361ee;background:#ede9fe">${q>0?q:"—"}</td>`;
+        }).join("");
+
+        return `
+          <tr style="background:#f5f3ff;border-top:2px solid #c4b5fd">
+            <td style="padding:7px 10px;font-weight:800;font-size:13px;color:#7c3aed">
+              ${p.party}
+              <div style="font-size:10px;color:#a78bfa;font-weight:500">${p.phone||""}</div>
+            </td>
+            ${allSizes.map(()=>`<td style="background:#f5f3ff"></td>`).join("")}
+            <td></td><td></td>
+          </tr>
+          ${colorRows}
+          <tr style="background:#ede9fe;border-bottom:2px solid #c4b5fd">
+            <td style="padding:5px 10px 5px 20px;font-size:11px;font-weight:700;color:#6d28d9">↳ Subtotal</td>
+            ${partySubtotals}
+            <td style="padding:5px 8px;text-align:center;font-weight:800;font-size:13px;color:#7c3aed">${partyTotalQty}</td>
+            <td style="padding:5px 8px;text-align:right;font-weight:700;font-size:12px;color:#0d9f6e">Rs.${Number(partyTotalAmt).toLocaleString("en-IN")}</td>
+          </tr>`;
       }).join("");
 
       // Grand total row
-      const totalCells = allSizes.map(sz=>{
-        const q = Object.values(colorMap).reduce((s,c)=>s+(c.sizes[sz]||0),0);
-        return `<td style="padding:5px 8px;text-align:center;font-weight:800;font-size:12px;color:#4361ee;background:#eef1ff">${q>0?q:"—"}</td>`;
+      const grandTotals = allSizes.map(sz => {
+        const q = Object.values(art.parties).reduce((s,p)=>s+p.txns.reduce((ss,t)=>ss+t.sizes.reduce((sss,sz2)=>sz2.size===sz?sss+sz2.qty:sss,0),0),0);
+        return `<td style="padding:6px 8px;text-align:center;font-weight:900;font-size:14px;color:#fff;background:#1e293b">${q>0?q:"—"}</td>`;
       }).join("");
 
+      const sizeHeaders = allSizes.map(sz=>`<th style="padding:6px 8px;text-align:center;font-size:10px;font-weight:800;color:#fff;background:#1e293b;min-width:44px;letter-spacing:.5px">${sz}</th>`).join("");
+
       return `
-        <div style="margin-bottom:20px;border:1px solid #e5e7eb;border-radius:10px;overflow:hidden;page-break-inside:avoid">
-          <div style="background:#1e293b;color:#fff;padding:10px 14px;display:flex;justify-content:space-between;align-items:center">
+        <div style="margin-bottom:24px;border:2px solid #1e293b;border-radius:12px;overflow:hidden;page-break-inside:avoid">
+          <div style="background:linear-gradient(135deg,#1e293b,#334155);color:#fff;padding:12px 16px;display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px">
             <div>
-              <div style="font-size:15px;font-weight:800">${art.articleName}</div>
-              <div style="font-size:10px;opacity:.6;margin-top:1px">${art.skuId||""}</div>
+              <div style="font-size:17px;font-weight:900;letter-spacing:-.3px">${art.articleName}</div>
+              <div style="font-size:10px;opacity:.55;margin-top:2px;font-family:monospace">${art.skuId||""}</div>
             </div>
-            <div style="display:flex;gap:16px;text-align:right">
-              <div><div style="font-size:9px;opacity:.6;text-transform:uppercase">Parties</div><div style="font-size:16px;font-weight:800">${numParties}</div></div>
-              <div><div style="font-size:9px;opacity:.6;text-transform:uppercase">Total Pcs</div><div style="font-size:16px;font-weight:800;color:#7dd3fc">${totalQty}</div></div>
-              <div><div style="font-size:9px;opacity:.6;text-transform:uppercase">Amount</div><div style="font-size:14px;font-weight:800;color:#6ee7b7">Rs.${Number(totalAmt).toLocaleString("en-IN")}</div></div>
+            <div style="display:flex;gap:20px;text-align:center">
+              <div><div style="font-size:9px;opacity:.5;text-transform:uppercase;letter-spacing:.8px">Parties</div><div style="font-size:20px;font-weight:900">${Object.keys(art.parties).length}</div></div>
+              <div><div style="font-size:9px;opacity:.5;text-transform:uppercase;letter-spacing:.8px">Total Pcs</div><div style="font-size:20px;font-weight:900;color:#7dd3fc">${artTotalQty}</div></div>
+              <div><div style="font-size:9px;opacity:.5;text-transform:uppercase;letter-spacing:.8px">Amount</div><div style="font-size:16px;font-weight:800;color:#6ee7b7">Rs.${Number(artTotalAmt).toLocaleString("en-IN")}</div></div>
             </div>
           </div>
           <div style="overflow-x:auto">
             <table style="width:100%;border-collapse:collapse;min-width:400px">
-              <thead><tr>
-                <th style="padding:6px 10px;text-align:left;font-size:9px;background:#f8fafc;color:#64748b;font-weight:700;border-bottom:1px solid #e5e7eb">COLOR / PARTY</th>
-                ${sizeHeaders}
-                <th style="padding:5px 8px;text-align:center;font-size:9px;background:#1e293b;color:#94a3b8;font-weight:700">TOTAL</th>
-                <th style="padding:5px 8px;text-align:right;font-size:9px;background:#1e293b;color:#94a3b8;font-weight:700">AMOUNT</th>
-              </tr></thead>
+              <thead>
+                <tr style="background:#1e293b">
+                  <th style="padding:6px 10px;text-align:left;font-size:10px;font-weight:800;color:#94a3b8">PARTY / COLOR</th>
+                  ${sizeHeaders}
+                  <th style="padding:6px 8px;text-align:center;font-size:10px;font-weight:800;color:#fff;background:#0891b2">TOTAL</th>
+                  <th style="padding:6px 8px;text-align:right;font-size:10px;font-weight:800;color:#fff;background:#0d9f6e">AMT</th>
+                </tr>
+              </thead>
               <tbody>
-                ${colorRows}
-                <tr style="background:#eef1ff;border-top:2px solid #4361ee">
-                  <td style="padding:6px 10px;font-weight:800;font-size:12px;color:#4361ee">GRAND TOTAL</td>
-                  ${totalCells}
-                  <td style="padding:5px 8px;text-align:center;font-weight:800;font-size:14px;color:#0891b2">${totalQty}</td>
-                  <td style="padding:5px 8px;text-align:right;font-weight:800;font-size:12px;color:#0d9f6e">Rs.${Number(totalAmt).toLocaleString("en-IN")}</td>
+                ${partyBlocks}
+                <tr style="background:#1e293b">
+                  <td style="padding:8px 10px;font-weight:900;font-size:13px;color:#f8fafc">GRAND TOTAL</td>
+                  ${grandTotals}
+                  <td style="padding:6px 8px;text-align:center;font-weight:900;font-size:16px;color:#7dd3fc;background:#1e293b">${artTotalQty}</td>
+                  <td style="padding:6px 8px;text-align:right;font-weight:800;font-size:13px;color:#6ee7b7;background:#1e293b">Rs.${Number(artTotalAmt).toLocaleString("en-IN")}</td>
                 </tr>
               </tbody>
             </table>
@@ -1563,26 +1593,38 @@ body{font-family:'Segoe UI',sans-serif;background:#f5f6fa;display:flex;flex-dire
         </div>`;
     }).join("");
 
-    const html = `<!DOCTYPE html><html><head><title>Article Report - ${new Date().toLocaleDateString("en-IN")}</title>
+    const grandTotal = artEntries.reduce((s,art)=>s+Object.values(art.parties).reduce((ss,p)=>ss+p.txns.reduce((sss,t)=>sss+t.sizes.reduce((q,sz)=>q+sz.qty,0),0),0),0);
+    const grandAmt = artEntries.reduce((s,art)=>s+Object.values(art.parties).reduce((ss,p)=>ss+p.txns.reduce((sss,t)=>sss+t.sizes.reduce((q,sz)=>q+(sz.amount||0),0),0),0),0);
+
+    const html = `<!DOCTYPE html><html><head><title>Article Report</title>
 <style>
 *{margin:0;padding:0;box-sizing:border-box}
 body{font-family:'Segoe UI',sans-serif;padding:20px;color:#1a1a2e;background:#f8fafc}
-.no-print{margin-bottom:16px;display:flex;gap:8px;align-items:center}
+.no-print{margin-bottom:16px;display:flex;gap:8px;align-items:center;flex-wrap:wrap}
 .no-print button{padding:8px 18px;border:none;border-radius:7px;cursor:pointer;font-size:13px;font-weight:700;font-family:sans-serif}
-h1{font-size:20px;font-weight:800;margin-bottom:4px}
-.subtitle{font-size:12px;color:#64748b;margin-bottom:16px}
+.report-header{background:#1e293b;color:#fff;border-radius:12px;padding:16px 20px;margin-bottom:20px;display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:12px}
 @media print{
   .no-print{display:none}
-  body{background:#fff;padding:10px}
-  @page{margin:8mm;size:A4}
+  body{background:#fff;padding:8px}
+  @page{margin:6mm;size:A4 landscape}
 }
 </style></head><body>
 <div class="no-print">
   <button onclick="window.print()" style="background:#4361ee;color:#fff">🖨 Print / Save PDF</button>
   <button onclick="window.close()" style="background:#f1f5f9;color:#374151">Close</button>
+  <span style="font-size:12px;color:#64748b">Tip: Print in Landscape for best results</span>
 </div>
-<h1>📦 Article-wise Order Report</h1>
-<div class="subtitle">${co.name||"Your Company"} &nbsp;·&nbsp; Generated: ${new Date().toLocaleDateString("en-IN",{day:"2-digit",month:"short",year:"numeric"})} &nbsp;·&nbsp; ${artEntries.length} articles</div>
+<div class="report-header">
+  <div>
+    <div style="font-size:20px;font-weight:900">📦 Article-wise Order Report</div>
+    <div style="font-size:11px;opacity:.6;margin-top:3px">${co.name||"Your Company"} &nbsp;·&nbsp; ${new Date().toLocaleDateString("en-IN",{day:"2-digit",month:"short",year:"numeric"})}</div>
+  </div>
+  <div style="display:flex;gap:24px;text-align:center">
+    <div><div style="font-size:9px;opacity:.5;text-transform:uppercase">Articles</div><div style="font-size:22px;font-weight:900">${artEntries.length}</div></div>
+    <div><div style="font-size:9px;opacity:.5;text-transform:uppercase">Total Pcs</div><div style="font-size:22px;font-weight:900;color:#7dd3fc">${grandTotal}</div></div>
+    <div><div style="font-size:9px;opacity:.5;text-transform:uppercase">Total Amount</div><div style="font-size:18px;font-weight:800;color:#6ee7b7">Rs.${Number(grandAmt).toLocaleString("en-IN")}</div></div>
+  </div>
+</div>
 ${rows}
 </body></html>`;
     const w = window.open("","_blank");
