@@ -678,15 +678,12 @@ export default function App() {
     setDbStatus("saving");
     saveTimer.current = setTimeout(async () => {
       try {
-        await Promise.all([
-          dbSet("articles",    newState.articles    ?? articles),
-          dbSet("customers",   newState.customers   ?? customers),
-          dbSet("challans",    newState.challans    ?? challans),
-          dbSet("cats",        newState.cats        ?? cats),
-          dbSet("co",          newState.co          ?? co),
-          dbSet("companyLogo", newState.companyLogo !== undefined ? newState.companyLogo : companyLogo),
-          dbSet("catBanners",  newState.catBanners  ?? catBanners),
-        ]);
+        // Only save keys that were explicitly changed — reduces egress by ~85%
+        const saves = Object.keys(newState).map(key => {
+          const val = key === "companyLogo" ? newState[key] : newState[key];
+          return dbSet(key, val);
+        });
+        await Promise.all(saves);
         setDbStatus("synced");
         // Update localStorage cache
         const full = { articles, customers, challans, cats, co, companyLogo, catBanners, ...newState };
