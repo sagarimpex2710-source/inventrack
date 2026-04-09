@@ -1200,14 +1200,18 @@ ${ch.remarks?`<div class="notes"><strong>Remarks:</strong> ${ch.remarks}</div>`:
 </body></html>`;
   };
 
+  // Universal print helper — opens in new tab, falls back to download
+  const openHTML = (html, filename) => {
+    const blob = new Blob([html], {type:"text/html;charset=utf-8"});
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url; a.target = "_blank"; a.rel = "noopener";
+    document.body.appendChild(a); a.click(); document.body.removeChild(a);
+    setTimeout(()=>URL.revokeObjectURL(url), 5000);
+  };
+
   const printChallan = ch => {
-    const w = window.open("", "_blank", "width=900,height=1100");
-    if (!w) { alert("Please allow pop-ups to print challans."); return; }
-    w.document.write(getChallanHTML(ch));
-    w.document.close();
-    w.onload = () => setTimeout(() => { w.focus(); w.print(); }, 300);
-    // fallback if onload already fired
-    setTimeout(() => { try { w.focus(); w.print(); } catch {} }, 800);
+    openHTML(getChallanHTML(ch), `${ch.number}.html`);
   };
 
   const downloadPDF = ch => {
@@ -1307,10 +1311,7 @@ body{font-family:'Segoe UI',sans-serif;background:#f5f6fa;display:flex;flex-dire
   <div class="footer">Handle with care &nbsp;·&nbsp; ${co.name||""} ${co.phone ? "· "+co.phone : ""}</div>
 </div>
 </body></html>`;
-    const w = window.open("", "_blank");
-    if (!w) { alert("Please allow pop-ups for this site to print the packing slip.\n\nIn your browser: Settings → Pop-ups → Allow for this site."); return; }
-    w.document.write(html);
-    w.document.close();
+    openHTML(html, `PackingSlip-${ch.number}.html`);
   };
   const printOrderSlip = (ord) => {
     const rows = ord.items.map((it,idx) => {
@@ -1378,9 +1379,7 @@ body{font-family:'Segoe UI',sans-serif;background:#f5f6fa;display:flex;flex-dire
     This is a proforma order — not a tax invoice · ${co.name||""} ${co.phone?"· "+co.phone:""}
   </div>
 </div></body></html>`;
-    const w = window.open("","_blank");
-    if (!w) { alert("Please allow pop-ups for this site."); return; }
-    w.document.write(html); w.document.close();
+    openHTML(html, `Order-${ord.number}.html`);
   };
 
   const openEditOrder = (ord) => {
@@ -1627,9 +1626,7 @@ body{font-family:'Segoe UI',sans-serif;padding:20px;color:#1a1a2e;background:#f8
 </div>
 ${rows}
 </body></html>`;
-    const w = window.open("","_blank");
-    if (!w) { alert("Please allow pop-ups."); return; }
-    w.document.write(html); w.document.close();
+    openHTML(html, `ArticleReport-${new Date().toISOString().slice(0,10)}.html`);
   };
 
   const buildSystemPrompt = () => {
