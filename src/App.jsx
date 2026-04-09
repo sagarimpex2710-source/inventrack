@@ -1205,7 +1205,8 @@ ${ch.remarks?`<div class="notes"><strong>Remarks:</strong> ${ch.remarks}</div>`:
     const blob = new Blob([html], {type:"text/html;charset=utf-8"});
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
-    a.href = url; a.target = "_blank"; a.rel = "noopener";
+    a.href = url;
+    a.download = filename;
     document.body.appendChild(a); a.click(); document.body.removeChild(a);
     setTimeout(()=>URL.revokeObjectURL(url), 5000);
   };
@@ -1474,6 +1475,7 @@ body{font-family:'Segoe UI',sans-serif;background:#f5f6fa;display:flex;flex-dire
   };
 
   const printArticleReport = (artEntries, allTxns) => {
+    try {
     const sizeOrder = ["S","M","L","XL","XXL","3XL","4XL","5XL","6XL","7XL"];
     const sortSizes = sizes => [...sizes].sort((a,b)=>(sizeOrder.indexOf(a)===-1?99:sizeOrder.indexOf(a))-(sizeOrder.indexOf(b)===-1?99:sizeOrder.indexOf(b)));
 
@@ -1624,9 +1626,10 @@ body{font-family:'Segoe UI',sans-serif;padding:20px;color:#1a1a2e;background:#f8
     <div><div style="font-size:9px;opacity:.5;text-transform:uppercase">Total Amount</div><div style="font-size:18px;font-weight:800;color:#6ee7b7">Rs.${Number(grandAmt).toLocaleString("en-IN")}</div></div>
   </div>
 </div>
-${rows}
+${articleBlocks}
 </body></html>`;
     openHTML(html, `ArticleReport-${new Date().toISOString().slice(0,10)}.html`);
+    } catch(e) { alert("Error generating report: " + e.message); console.error(e); }
   };
 
   const buildSystemPrompt = () => {
