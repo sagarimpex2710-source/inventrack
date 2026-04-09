@@ -1474,6 +1474,122 @@ body{font-family:'Segoe UI',sans-serif;background:#f5f6fa;display:flex;flex-dire
     setShowChModal(true);
   };
 
+  const printArticleReport = (artEntries, allTxns) => {
+    // Build colour×size matrix for each article
+    const rows = artEntries.map(art => {
+      // Collect all colors and sizes used
+      const colorMap = {}; // colorName → {sizes:{sz→qty}, totalQty, parties:[]}
+      Object.values(art.parties).forEach(p => {
+        p.txns.forEach(t => {
+          const c = t.colorName;
+          if (!colorMap[c]) colorMap[c] = {sizes:{}, totalQty:0, totalAmt:0, parties:new Set()};
+          colorMap[c].parties.add(p.party);
+          t.sizes.forEach(sz => {
+            colorMap[c].sizes[sz.size] = (colorMap[c].sizes[sz.size]||0) + sz.qty;
+            colorMap[c].totalQty += sz.qty;
+            colorMap[c].totalAmt += (sz.amount||0);
+          });
+        });
+      });
+      // Collect all unique sizes across all colors
+      const allSizes = [...new Set(Object.values(colorMap).flatMap(c=>Object.keys(c.sizes)))].sort((a,b)=>{
+        const order=["S","M","L","XL","XXL","3XL","4XL","5XL","6XL","7XL"];
+        return (order.indexOf(a)===-1?99:order.indexOf(a))-(order.indexOf(b)===-1?99:order.indexOf(b));
+      });
+      const totalQty = Object.values(colorMap).reduce((s,c)=>s+c.totalQty,0);
+      const totalAmt = Object.values(colorMap).reduce((s,c)=>s+c.totalAmt,0);
+      const numParties = Object.keys(art.parties).length;
+
+      const sizeHeaders = allSizes.map(sz=>`<th style="padding:5px 8px;text-align:center;font-size:9px;background:#1e293b;color:#94a3b8;font-weight:700;min-width:40px">${sz}</th>`).join("");
+      const colorRows = Object.entries(colorMap).map(([color,data],ci)=>{
+        const bg = ci%2===0?"#fff":"#f8fafc";
+        const sizeCells = allSizes.map(sz=>{
+          const q = data.sizes[sz]||0;
+          return `<td style="padding:5px 8px;text-align:center;font-size:12px;font-weight:${q>0?"700":"400"};color:${q>0?"#1a1a2e":"#d1d5db"};background:${q>0?"#eef1ff":"transparent"};border-radius:4px">${q>0?q:"—"}</td>`;
+        }).join("");
+        const h = color.split("").reduce((a,c)=>a+c.charCodeAt(0),0)%360;
+        return `<tr style="background:${bg}">
+          <td style="padding:6px 10px">
+            <div style="display:flex;align-items:center;gap:6px">
+              <div style="width:12px;height:12px;border-radius:50%;background:hsl(${h},55%,55%);flex-shrink:0"></div>
+              <span style="font-size:12px;font-weight:600">${color}</span>
+            </div>
+            <div style="font-size:10px;color:#9ca3af;margin-top:2px">${[...data.parties].join(", ")}</div>
+          </td>
+          ${sizeCells}
+          <td style="padding:5px 8px;text-align:center;font-weight:800;font-size:13px;color:#0891b2">${data.totalQty}</td>
+          <td style="padding:5px 8px;text-align:right;font-weight:700;font-size:11px;color:#0d9f6e">Rs.${Number(data.totalAmt).toLocaleString("en-IN")}</td>
+        </tr>`;
+      }).join("");
+
+      // Grand total row
+      const totalCells = allSizes.map(sz=>{
+        const q = Object.values(colorMap).reduce((s,c)=>s+(c.sizes[sz]||0),0);
+        return `<td style="padding:5px 8px;text-align:center;font-weight:800;font-size:12px;color:#4361ee;background:#eef1ff">${q>0?q:"—"}</td>`;
+      }).join("");
+
+      return `
+        <div style="margin-bottom:20px;border:1px solid #e5e7eb;border-radius:10px;overflow:hidden;page-break-inside:avoid">
+          <div style="background:#1e293b;color:#fff;padding:10px 14px;display:flex;justify-content:space-between;align-items:center">
+            <div>
+              <div style="font-size:15px;font-weight:800">${art.articleName}</div>
+              <div style="font-size:10px;opacity:.6;margin-top:1px">${art.skuId||""}</div>
+            </div>
+            <div style="display:flex;gap:16px;text-align:right">
+              <div><div style="font-size:9px;opacity:.6;text-transform:uppercase">Parties</div><div style="font-size:16px;font-weight:800">${numParties}</div></div>
+              <div><div style="font-size:9px;opacity:.6;text-transform:uppercase">Total Pcs</div><div style="font-size:16px;font-weight:800;color:#7dd3fc">${totalQty}</div></div>
+              <div><div style="font-size:9px;opacity:.6;text-transform:uppercase">Amount</div><div style="font-size:14px;font-weight:800;color:#6ee7b7">Rs.${Number(totalAmt).toLocaleString("en-IN")}</div></div>
+            </div>
+          </div>
+          <div style="overflow-x:auto">
+            <table style="width:100%;border-collapse:collapse;min-width:400px">
+              <thead><tr>
+                <th style="padding:6px 10px;text-align:left;font-size:9px;background:#f8fafc;color:#64748b;font-weight:700;border-bottom:1px solid #e5e7eb">COLOR / PARTY</th>
+                ${sizeHeaders}
+                <th style="padding:5px 8px;text-align:center;font-size:9px;background:#1e293b;color:#94a3b8;font-weight:700">TOTAL</th>
+                <th style="padding:5px 8px;text-align:right;font-size:9px;background:#1e293b;color:#94a3b8;font-weight:700">AMOUNT</th>
+              </tr></thead>
+              <tbody>
+                ${colorRows}
+                <tr style="background:#eef1ff;border-top:2px solid #4361ee">
+                  <td style="padding:6px 10px;font-weight:800;font-size:12px;color:#4361ee">GRAND TOTAL</td>
+                  ${totalCells}
+                  <td style="padding:5px 8px;text-align:center;font-weight:800;font-size:14px;color:#0891b2">${totalQty}</td>
+                  <td style="padding:5px 8px;text-align:right;font-weight:800;font-size:12px;color:#0d9f6e">Rs.${Number(totalAmt).toLocaleString("en-IN")}</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </div>`;
+    }).join("");
+
+    const html = `<!DOCTYPE html><html><head><title>Article Report - ${new Date().toLocaleDateString("en-IN")}</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+body{font-family:'Segoe UI',sans-serif;padding:20px;color:#1a1a2e;background:#f8fafc}
+.no-print{margin-bottom:16px;display:flex;gap:8px;align-items:center}
+.no-print button{padding:8px 18px;border:none;border-radius:7px;cursor:pointer;font-size:13px;font-weight:700;font-family:sans-serif}
+h1{font-size:20px;font-weight:800;margin-bottom:4px}
+.subtitle{font-size:12px;color:#64748b;margin-bottom:16px}
+@media print{
+  .no-print{display:none}
+  body{background:#fff;padding:10px}
+  @page{margin:8mm;size:A4}
+}
+</style></head><body>
+<div class="no-print">
+  <button onclick="window.print()" style="background:#4361ee;color:#fff">🖨 Print / Save PDF</button>
+  <button onclick="window.close()" style="background:#f1f5f9;color:#374151">Close</button>
+</div>
+<h1>📦 Article-wise Order Report</h1>
+<div class="subtitle">${co.name||"Your Company"} &nbsp;·&nbsp; Generated: ${new Date().toLocaleDateString("en-IN",{day:"2-digit",month:"short",year:"numeric"})} &nbsp;·&nbsp; ${artEntries.length} articles</div>
+${rows}
+</body></html>`;
+    const w = window.open("","_blank");
+    if (!w) { alert("Please allow pop-ups."); return; }
+    w.document.write(html); w.document.close();
+  };
+
   const buildSystemPrompt = () => {
     const artList = articles.map(a => {
       const colorDetails = a.colors.map(c => {
@@ -2297,6 +2413,11 @@ GUIDELINES:
                 <button onClick={()=>setReportView("article")} style={{padding:"6px 14px",borderRadius:6,border:"none",background:reportView==="article"?S.card:"transparent",color:reportView==="article"?S.acc:S.txt2,fontFamily:S.f,fontSize:12,fontWeight:reportView==="article"?700:500,cursor:"pointer",boxShadow:reportView==="article"?"0 1px 3px rgba(0,0,0,.08)":"none"}}>Article-wise</button>
                 <button onClick={()=>setReportView("party")} style={{padding:"6px 14px",borderRadius:6,border:"none",background:reportView==="party"?S.card:"transparent",color:reportView==="party"?S.acc:S.txt2,fontFamily:S.f,fontSize:12,fontWeight:reportView==="party"?700:500,cursor:"pointer",boxShadow:reportView==="party"?"0 1px 3px rgba(0,0,0,.08)":"none"}}>Party-wise</button>
               </div>
+              {reportView==="article" && artEntries.length>0 && (
+                <button onClick={()=>printArticleReport(artEntries, allTxns)} style={{display:"flex",alignItems:"center",gap:6,padding:"7px 14px",background:`linear-gradient(135deg,${S.pur},#9333ea)`,border:"none",borderRadius:8,cursor:"pointer",color:"#fff",fontSize:12,fontWeight:700,fontFamily:S.f}}>
+                  <Download size={13}/>Export PDF
+                </button>
+              )}
             </div>
           </div>
 
