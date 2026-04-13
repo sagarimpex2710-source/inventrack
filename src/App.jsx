@@ -1199,16 +1199,31 @@ ${ch.remarks?`<div class="notes"><strong>Remarks:</strong> ${ch.remarks}</div>`:
 
   // Universal print helper — opens in new tab, falls back to download
   const openHTML = (html, filename) => {
+    // Try opening in new tab first (works when called from direct click)
+    const w = window.open("", "_blank");
+    if (w) {
+      w.document.write(html);
+      w.document.close();
+      return;
+    }
+    // Fallback: download file if popup blocked
     const blob = new Blob([html], {type:"text/html;charset=utf-8"});
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
-    a.href = url;
-    a.download = filename;
+    a.href = url; a.download = filename;
     document.body.appendChild(a); a.click(); document.body.removeChild(a);
     setTimeout(()=>URL.revokeObjectURL(url), 5000);
   };
 
   const printChallan = ch => {
+    const w = window.open("", "_blank");
+    if (w) {
+      w.document.write(getChallanHTML(ch));
+      w.document.close();
+      w.onload = () => setTimeout(() => { w.focus(); w.print(); }, 400);
+      setTimeout(() => { try { w.focus(); w.print(); } catch {} }, 900);
+      return;
+    }
     openHTML(getChallanHTML(ch), `${ch.number}.html`);
   };
 
