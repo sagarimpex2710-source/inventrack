@@ -859,7 +859,11 @@ export default function App() {
       const col = art?.colors[i.colorIdx];
       return {articleId:i.articleId, colorIdx:i.colorIdx, articleName:art?.name||"", skuId:art?.skuId||"", colorName:col?.name||"", colorImage:col?.image||null, size:i.size, qty:i.qty, price:i.price, amount:i.qty*i.price};
     });
-    const order = {id:uid(), number:`ORD-${String(orders.length+1).padStart(4,"0")}`, date:Date.now(), customer:{name:orderForm.name, phone:orderForm.phone}, note:orderForm.note, items:orderItems, totalQty:cart.reduce((s,i)=>s+i.qty,0), totalAmt:cartTotal, status:"pending", type:"order"};
+    const nextOrdNum = () => {
+      const nums = orders.map(o => parseInt(o.number?.replace(/\D/g,""))||0);
+      return String(Math.max(0,...nums)+1).padStart(4,"0");
+    };
+    const order = {id:uid(), number:`ORD-${nextOrdNum()}`, date:Date.now(), customer:{name:orderForm.name, phone:orderForm.phone}, note:orderForm.note, items:orderItems, totalQty:cart.reduce((s,i)=>s+i.qty,0), totalAmt:cartTotal, status:"pending", type:"order"};
     setOrders(prev => [order, ...prev]);
     saveOrderToDB(order).catch(e => console.error("Order save failed:", e));
     setCart([]); setOrderForm({name:"",phone:"",note:""}); setOrderPlaced(true);
@@ -1037,7 +1041,7 @@ export default function App() {
     const cust = customers.find(c => c.id === chf.customerId);
     const challan = {
       id: editCh ? editCh.id : uid(),
-      number: editCh ? editCh.number : `DC-${String(challans.length+1).padStart(4,"0")}`,
+      number: editCh ? editCh.number : `DC-${String(Math.max(0,...challans.map(c=>parseInt(c.number?.replace(/\D/g,""))||0))+1).padStart(4,"0")}`,
       date: editCh ? editCh.date : Date.now(),
       customerId: chf.customerId,
       customer:{name:cust.name,phone:cust.phone,address:`${cust.address||""}, ${cust.city||""}, ${cust.state||""} - ${cust.pincode||""}`.replace(/^,\s*/,""),gst:cust.gst,transport:cust.transport},
@@ -1426,7 +1430,7 @@ body{font-family:'Segoe UI',sans-serif;background:#f5f6fa;display:flex;flex-dire
     const tAmt = orderItems.reduce((s,it)=>s+it.sizes.reduce((ss,sz)=>ss+sz.amount,0),0);
     const ord = {
       id: editingOrder ? editingOrder.id : uid(),
-      number: editingOrder ? editingOrder.number : `ORD-${String(orders.length+1).padStart(4,"0")}`,
+      number: editingOrder ? editingOrder.number : `ORD-${String(Math.max(0,...orders.map(o=>parseInt(o.number?.replace(/\D/g,""))||0))+1).padStart(4,"0")}`,
       date: editingOrder ? editingOrder.date : Date.now(),
       customer:{name:cust.name,phone:cust.phone,address:`${cust.address||""}, ${cust.city||""}, ${cust.state||""}`.replace(/^,\s*/,"")},
       remarks:orderForm2.remarks,items:orderItems,totalQty:tQty,totalAmt:tAmt,
@@ -1509,7 +1513,7 @@ body{font-family:'Segoe UI',sans-serif;background:#f5f6fa;display:flex;flex-dire
             colorMap[t.colorName].qty += sz.qty;
             colorMap[t.colorName].amt += (sz.amount||0);
           });
-          colorMap[t.colorName].refs.push(`${t.number}(${t.type==="challan"?"DC":"ORD"})`);
+          colorMap[t.colorName].refs.push(t.number);
         });
 
         const partyTotalQty = Object.values(colorMap).reduce((s,c)=>s+c.qty,0);
