@@ -261,6 +261,27 @@ const Modal = ({open,onClose,title,sub,children,w=640}) => {
   );
 };
 
+const ConfirmDialog = ({open, title, message, onYes, onNo, danger=true}) => {
+  if (!open) return null;
+  return (
+    <div style={{position:"fixed",inset:0,zIndex:2000,display:"flex",alignItems:"center",justifyContent:"center",background:"rgba(0,0,0,.5)",backdropFilter:"blur(6px)",padding:16}}>
+      <div onClick={e=>e.stopPropagation()} style={{background:S.card,borderRadius:18,border:`1px solid ${S.bdr}`,width:"calc(100% - 16px)",maxWidth:380,boxShadow:"0 24px 64px rgba(0,0,0,.2)",overflow:"hidden"}}>
+        <div style={{padding:"20px 20px 16px",textAlign:"center"}}>
+          <div style={{width:52,height:52,borderRadius:16,background:danger?S.redL:S.ambL,display:"flex",alignItems:"center",justifyContent:"center",margin:"0 auto 14px"}}>
+            <AlertTriangle size={24} color={danger?S.red:S.amb}/>
+          </div>
+          <div style={{fontSize:16,fontWeight:800,marginBottom:8}}>{title}</div>
+          <div style={{fontSize:13,color:S.txt2,lineHeight:1.6}}>{message}</div>
+        </div>
+        <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:0,borderTop:`1px solid ${S.bdr}`}}>
+          <button onClick={onNo} style={{padding:"14px 0",border:"none",borderRight:`1px solid ${S.bdr}`,background:"#fff",color:S.txt2,fontSize:14,fontWeight:700,fontFamily:S.f,cursor:"pointer",borderRadius:"0 0 0 18px"}}>No, Cancel</button>
+          <button onClick={onYes} style={{padding:"14px 0",border:"none",background:danger?S.red:S.amb,color:"#fff",fontSize:14,fontWeight:700,fontFamily:S.f,cursor:"pointer",borderRadius:"0 0 18px 0"}}>Yes, Delete</button>
+        </div>
+      </div>
+    </div>
+  );
+};
+
 const SizeChip = ({label,on,onClick}) => (
   <button onClick={onClick} style={{padding:"6px 12px",borderRadius:16,fontSize:12,fontWeight:600,fontFamily:S.f,border:on?`2px solid ${S.acc}`:`1.5px solid ${S.bdr}`,background:on?S.accL:S.card,color:on?S.acc:S.txt2,cursor:"pointer",minWidth:42,textAlign:"center"}}>{label}</button>
 );
@@ -270,37 +291,7 @@ const ColorDot = ({name}) => {
   return <div style={{display:"inline-flex",alignItems:"center",gap:6,padding:"3px 10px 3px 3px",background:`hsl(${h},55%,95%)`,borderRadius:16,border:`1px solid hsl(${h},45%,85%)`}}><div style={{width:16,height:16,borderRadius:"50%",background:`hsl(${h},55%,55%)`,border:`2px solid hsl(${h},45%,85%)`}}/><span style={{fontSize:11,fontWeight:600,color:`hsl(${h},50%,35%)`}}>{name}</span></div>;
 };
 
-/* ── Image Upload with Compression ── */
-const ImgUp = ({value, onChange, sz=80}) => {
-  const ref = useRef();
-  const [uploading, setUploading] = useState(false);
-  const [err, setErr] = useState("");
-  const handle = async e => {
-    const f = e.target.files[0];
-    if (!f) return;
-    if (f.size > 10 * 1024 * 1024) { setErr("Max 10MB"); setTimeout(() => setErr(""), 3000); return; }
-    setUploading(true); setErr("");
-    try {
-      const compressed = await compressImage(f, 500, 0.6);
-      onChange(compressed);
-    } catch { setErr("Upload failed"); setTimeout(() => setErr(""), 3000); }
-    finally { setUploading(false); e.target.value = ""; }
-  };
-  return (
-    <div style={{position:"relative", display:"inline-block"}}>
-      <div onClick={() => !uploading && ref.current?.click()} style={{width:sz, height:sz, borderRadius:10, border:`2px dashed ${err ? S.red : value ? S.acc : S.bdr}`, background:value?"transparent":S.bg, display:"flex", alignItems:"center", justifyContent:"center", cursor:uploading?"wait":"pointer", overflow:"hidden", flexShrink:0}}>
-        {uploading
-          ? <div style={{textAlign:"center",color:S.acc}}><div style={{fontSize:9,marginTop:2}}>...</div></div>
-          : value
-            ? <img src={value} alt="" style={{width:"100%",height:"100%",objectFit:"cover"}}/>
-            : <div style={{textAlign:"center",color:err?S.red:S.txt3}}><Camera size={20}/><div style={{fontSize:9,marginTop:2}}>{err||"Upload"}</div></div>
-        }
-      </div>
-      <input ref={ref} type="file" accept="image/*" onChange={handle} style={{display:"none"}}/>
-      {value && !uploading && <button onClick={e => {e.stopPropagation(); onChange(null);}} style={{position:"absolute",top:-6,right:-6,width:20,height:20,borderRadius:"50%",background:S.red,border:"2px solid #fff",display:"flex",alignItems:"center",justifyContent:"center",cursor:"pointer",padding:0}}><X size={10} color="#fff"/></button>}
-    </div>
-  );
-};
+
 
 const Stat = ({icon,label,value,color}) => (
   <div style={{background:S.card,borderRadius:12,padding:"14px 16px",border:`1px solid ${S.bdr}`,flex:"1 1 130px",minWidth:0}}>
@@ -556,6 +547,9 @@ export default function App() {
   const blankC = {name:"",phone:"",whatsapp:"",email:"",dob:"",address:"",city:"",state:"",pincode:"",company:"",gst:"",agent:"",transport:""};
   const [cf, setCf] = useState(blankC);
   const [extF, setExtF] = useState(blankC);
+  const [confirmDlg, setConfirmDlg] = useState(null);
+  const askConfirm = (title, message, onYes) => setConfirmDlg({title, message, onYes});
+
   const [copied, setCopied] = useState(false);
   const [gstStatus, setGstStatus] = useState(null);
 
@@ -609,6 +603,16 @@ export default function App() {
   // ── Orders State ──
   const [orders, setOrders] = useState([]);
   const [expandedOrder, setExpandedOrder] = useState(null);
+  const [reportView, setReportView] = useState("article"); // article | party
+  const [reportSearch, setReportSearch] = useState("");
+  const [showConvertOrder, setShowConvertOrder] = useState(false);
+  const [convertingOrder, setConvertingOrder] = useState(null);
+  const [convertSelItems, setConvertSelItems] = useState({});
+  const [showCreateOrder, setShowCreateOrder] = useState(false);
+  const [showStockView, setShowStockView] = useState(false);
+  const [editingOrder, setEditingOrder] = useState(null);
+  const blankOF = {customerId:"", remarks:"", items:[]};
+  const [orderForm2, setOrderForm2] = useState(blankOF);
 
   // ── Backup State ──
   const [showBackup, setShowBackup] = useState(false);
@@ -674,15 +678,12 @@ export default function App() {
     setDbStatus("saving");
     saveTimer.current = setTimeout(async () => {
       try {
-        await Promise.all([
-          dbSet("articles",    newState.articles    ?? articles),
-          dbSet("customers",   newState.customers   ?? customers),
-          dbSet("challans",    newState.challans    ?? challans),
-          dbSet("cats",        newState.cats        ?? cats),
-          dbSet("co",          newState.co          ?? co),
-          dbSet("companyLogo", newState.companyLogo !== undefined ? newState.companyLogo : companyLogo),
-          dbSet("catBanners",  newState.catBanners  ?? catBanners),
-        ]);
+        // Only save keys that were explicitly changed — reduces egress by ~85%
+        const saves = Object.keys(newState).map(key => {
+          const val = key === "companyLogo" ? newState[key] : newState[key];
+          return dbSet(key, val);
+        });
+        await Promise.all(saves);
         setDbStatus("synced");
         // Update localStorage cache
         const full = { articles, customers, challans, cats, co, companyLogo, catBanners, ...newState };
@@ -858,7 +859,11 @@ export default function App() {
       const col = art?.colors[i.colorIdx];
       return {articleId:i.articleId, colorIdx:i.colorIdx, articleName:art?.name||"", skuId:art?.skuId||"", colorName:col?.name||"", colorImage:col?.image||null, size:i.size, qty:i.qty, price:i.price, amount:i.qty*i.price};
     });
-    const order = {id:uid(), number:`ORD-${String(orders.length+1).padStart(4,"0")}`, date:Date.now(), customer:{name:orderForm.name, phone:orderForm.phone}, note:orderForm.note, items:orderItems, totalQty:cart.reduce((s,i)=>s+i.qty,0), totalAmt:cartTotal, status:"pending", type:"order"};
+    const nextOrdNum = () => {
+      const nums = orders.map(o => parseInt(o.number?.replace(/\D/g,""))||0);
+      return String(Math.max(0,...nums)+1).padStart(4,"0");
+    };
+    const order = {id:uid(), number:`ORD-${nextOrdNum()}`, date:Date.now(), customer:{name:orderForm.name, phone:orderForm.phone}, note:orderForm.note, items:orderItems, totalQty:cart.reduce((s,i)=>s+i.qty,0), totalAmt:cartTotal, status:"pending", type:"order"};
     setOrders(prev => [order, ...prev]);
     saveOrderToDB(order).catch(e => console.error("Order save failed:", e));
     setCart([]); setOrderForm({name:"",phone:"",note:""}); setOrderPlaced(true);
@@ -926,7 +931,14 @@ export default function App() {
     setArticlesDB(updated);
     setShowArtModal(false);
   };
-  const delArt = id => { setArticlesDB(articles.filter(a => a.id !== id)); if (expanded === id) setExpanded(null); };
+  const delArt = id => {
+    const art = articles.find(a => a.id === id);
+    askConfirm(
+      `Delete "${art?.name}"?`,
+      `This will permanently delete the article and all its color/size data. This cannot be undone.`,
+      () => { setArticlesDB(articles.filter(a => a.id !== id)); if (expanded === id) setExpanded(null); }
+    );
+  };
   const addCat = () => { const c = newCat.trim(); if (c && !cats.includes(c)) { setCatsDB([...cats, c]); setNewCat(""); } };
   const filteredArt = articles.filter(a => (a.name.toLowerCase().includes(search.toLowerCase()) || a.skuId.toLowerCase().includes(search.toLowerCase())) && (fCat === "All" || a.category === fCat));
 
@@ -948,12 +960,12 @@ export default function App() {
   const custPurchaseHistory = (cust) => {
     const fromChallans = challans.filter(ch => ch.customerId === cust.id || ch.customer?.name === cust.name).map(ch => ({
       id:ch.id, number:ch.number, date:ch.date, type:"challan",
-      items: ch.items.map(it => ({name:it.articleName, color:it.colorName, sizes:it.sizes})),
+      items: (ch.items||[]).map(it => ({name:it.articleName, color:it.colorName, sizes:it.sizes})),
       totalQty:ch.totalQty, totalAmt:ch.totalAmt
     }));
     const fromOrders = orders.filter(o => o.customer?.phone === cust.phone && o.status === "approved" && o.type !== "callback").map(o => ({
       id:o.id, number:o.number, date:o.date, type:"order",
-      items: o.items.map(it => ({name:it.articleName, color:it.colorName, sizes:[{size:it.size,qty:it.qty,amount:it.amount}]})),
+      items: (o.items||[]).map(it => ({name:it.articleName, color:it.colorName, sizes:[{size:it.size,qty:it.qty,amount:it.amount}]})),
       totalQty:o.totalQty, totalAmt:o.totalAmt
     }));
     return [...fromChallans, ...fromOrders].sort((a,b) => b.date - a.date);
@@ -971,6 +983,7 @@ export default function App() {
   };
   const updChQty = (i, sz, val) => { const items = [...chf.items]; items[i] = {...items[i], sizes:{...items[i].sizes,[sz]:Math.max(0,Number(val)||0)}}; setChf({...chf, items}); };
   const updChPrice = (i, sz, val) => { const items = [...chf.items]; items[i] = {...items[i], prices:{...items[i].prices,[sz]:Math.max(0,Number(val)||0)}}; setChf({...chf, items}); };
+  const [editChArts, setEditChArts] = useState(null); // restored articles during edit
   const chArts = editChArts || articles; // use restored arts during edit
   const getChArt = it => chArts.find(a => a.id === it.articleId);
   const getChCol = it => { const a = getChArt(it); return a?.colors[Number(it.colorIdx)]; };
@@ -978,8 +991,6 @@ export default function App() {
   const chTotAmt = chf.items.reduce((s,it) => { const col = getChCol(it); if (!col) return s; return s + Object.entries(it.sizes).reduce((ss,[sz,q]) => { const p = (it.prices?.[sz] !== undefined && it.prices[sz] !== "") ? Number(it.prices[sz]) : (col.sizes[sz]?.price || 0); return ss + q * p; }, 0); }, 0);
 
   const openNewChallan = () => { setEditCh(null); setChf({...blankCh}); setShowChModal(true); };
-
-  const [editChArts, setEditChArts] = useState(null); // restored articles during edit
 
   const openEditChallan = ch => {
     const restoredArts = articles.map(a => {
@@ -993,13 +1004,15 @@ export default function App() {
       });
       return copy;
     });
-    setEditChArts(restoredArts); // keep restored arts separate — don't save to DB yet
+    setEditChArts(restoredArts);
     setEditCh(ch);
+    // Find customerId — use stored id, or look up by name as fallback
+    const foundCust = customers.find(c => c.id === ch.customerId) || customers.find(c => c.name === ch.customer?.name);
     setChf({
-      customerId: ch.customerId || "",
+      customerId: foundCust?.id || ch.customerId || "",
       lrNumber: ch.lrNumber || "",
       remarks: ch.remarks || "",
-      items: ch.items.map(it => ({
+      items: (ch.items||[]).map(it => ({
         articleId: it.articleId || "",
         colorIdx: it.colorIdx !== undefined ? String(it.colorIdx) : "",
         sizes: Object.fromEntries((it.sizesRaw||[]).map(({size,qty}) => [size, qty]))
@@ -1025,12 +1038,12 @@ export default function App() {
         sizes:sizesData, sizesRaw: sizesData.map(s => ({size:s.size, qty:s.qty}))
       };
     });
-    const tQty = challanItems.reduce((s,it) => s + it.sizes.reduce((ss,sz) => ss + sz.qty, 0), 0);
-    const tAmt = challanItems.reduce((s,it) => s + it.sizes.reduce((ss,sz) => ss + sz.amount, 0), 0);
+    const tQty = challanItems.reduce((s,it) => s + (Array.isArray(it.sizes)?it.sizes:[{size:it.size,qty:it.qty,price:it.price||0,amount:it.amount||0}]).reduce((ss,sz) => ss + sz.qty, 0), 0);
+    const tAmt = challanItems.reduce((s,it) => s + (Array.isArray(it.sizes)?it.sizes:[{size:it.size,qty:it.qty,price:it.price||0,amount:it.amount||0}]).reduce((ss,sz) => ss + sz.amount, 0), 0);
     const cust = customers.find(c => c.id === chf.customerId);
     const challan = {
       id: editCh ? editCh.id : uid(),
-      number: editCh ? editCh.number : `DC-${String(challans.length+1).padStart(4,"0")}`,
+      number: editCh ? editCh.number : `DC-${String(Math.max(0,...challans.map(c=>parseInt(c.number?.replace(/\D/g,""))||0))+1).padStart(4,"0")}`,
       date: editCh ? editCh.date : Date.now(),
       customerId: chf.customerId,
       customer:{name:cust.name,phone:cust.phone,address:`${cust.address||""}, ${cust.city||""}, ${cust.state||""} - ${cust.pincode||""}`.replace(/^,\s*/,""),gst:cust.gst,transport:cust.transport},
@@ -1047,8 +1060,10 @@ export default function App() {
       return copy;
     });
     const updChallans = editCh ? challans.map(c => c.id === editCh.id ? challan : c) : [challan, ...challans];
-    setArticlesDB(updArts);
-    setChallansDB(updChallans);
+    // Save both together in ONE scheduleSave to avoid race condition
+    setArticles(updArts);
+    setChallans(updChallans);
+    scheduleSave({ articles: updArts, challans: updChallans });
     setEditChArts(null); // clear temp restored arts
     setShowChModal(false);
     setChf({...blankCh});
@@ -1056,32 +1071,40 @@ export default function App() {
   };
 
   const delChallan = ch => {
-    const restoredArts = articles.map(a => {
-      const copy = JSON.parse(JSON.stringify(a));
-      ch.items.forEach(it => {
-        if (it.articleId !== a.id) return;
-        const ci = Number(it.colorIdx);
-        (it.sizesRaw||[]).forEach(({size,qty}) => {
-          if (copy.colors[ci]?.sizes[size]) copy.colors[ci].sizes[size].qty += qty;
+    askConfirm(
+      `Delete Challan ${ch.number}?`,
+      `This will delete the challan for ${ch.customer.name} (${ch.totalQty} pcs · ${fmtR(ch.totalAmt)}).\n\n⚠️ Stock will be restored back to inventory.`,
+      () => {
+        const restoredArts = articles.map(a => {
+          const copy = JSON.parse(JSON.stringify(a));
+          ch.items.forEach(it => {
+            if (it.articleId !== a.id) return;
+            const ci = Number(it.colorIdx);
+            (it.sizesRaw||[]).forEach(({size,qty}) => {
+              if (copy.colors[ci]?.sizes[size]) copy.colors[ci].sizes[size].qty += qty;
+            });
+          });
+          return copy;
         });
-      });
-      return copy;
-    });
-    setArticlesDB(restoredArts);
-    setChallansDB(challans.filter(c => c.id !== ch.id));
-    if (expandedCh === ch.id) setExpandedCh(null);
+        const updChallans = challans.filter(c => c.id !== ch.id);
+        setArticles(restoredArts);
+        setChallans(updChallans);
+        scheduleSave({ articles: restoredArts, challans: updChallans });
+        if (expandedCh === ch.id) setExpandedCh(null);
+      }
+    );
   };
 
   /* ── Challan PDF/Print ── */
   const rupee = (n) => "Rs." + Number(n).toLocaleString("en-IN");
   const getChallanHTML = ch => {
     // One row per article+color, sizes shown horizontally — much more compact
-    const rows = ch.items.map((it, idx) => {
-      const sizeCells = it.sizes.map(sz =>
+    const rows = (ch.items||[]).map((it, idx) => {
+      const sizeCells = (Array.isArray(it.sizes)?it.sizes:[{size:it.size,qty:it.qty,price:it.price||0,amount:it.amount||0}]).map(sz =>
         `<td class="sz-cell"><div class="sz-lbl">${sz.size}</div><div class="sz-qty">${sz.qty}</div><div class="sz-rate">${rupee(sz.price)}</div></td>`
       ).join("");
-      const rowAmt = it.sizes.reduce((s,sz) => s + sz.amount, 0);
-      const rowQty = it.sizes.reduce((s,sz) => s + sz.qty, 0);
+      const rowAmt = (Array.isArray(it.sizes)?it.sizes:[{size:it.size,qty:it.qty,price:it.price||0,amount:it.amount||0}]).reduce((s,sz) => s + sz.amount, 0);
+      const rowQty = (Array.isArray(it.sizes)?it.sizes:[{size:it.size,qty:it.qty,price:it.price||0,amount:it.amount||0}]).reduce((s,sz) => s + sz.qty, 0);
       const bg = idx % 2 === 0 ? "#fff" : "#f9fafb";
       return `<tr style="background:${bg}">
         <td class="sno">${idx+1}</td>
@@ -1180,14 +1203,34 @@ ${ch.remarks?`<div class="notes"><strong>Remarks:</strong> ${ch.remarks}</div>`:
 </body></html>`;
   };
 
+  // Universal print helper — opens in new tab, falls back to download
+  const openHTML = (html, filename) => {
+    // Try opening in new tab first (works when called from direct click)
+    const w = window.open("", "_blank");
+    if (w) {
+      w.document.write(html);
+      w.document.close();
+      return;
+    }
+    // Fallback: download file if popup blocked
+    const blob = new Blob([html], {type:"text/html;charset=utf-8"});
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url; a.download = filename;
+    document.body.appendChild(a); a.click(); document.body.removeChild(a);
+    setTimeout(()=>URL.revokeObjectURL(url), 5000);
+  };
+
   const printChallan = ch => {
-    const w = window.open("", "_blank", "width=900,height=1100");
-    if (!w) { alert("Please allow pop-ups to print challans."); return; }
-    w.document.write(getChallanHTML(ch));
-    w.document.close();
-    w.onload = () => setTimeout(() => { w.focus(); w.print(); }, 300);
-    // fallback if onload already fired
-    setTimeout(() => { try { w.focus(); w.print(); } catch {} }, 800);
+    const w = window.open("", "_blank");
+    if (w) {
+      w.document.write(getChallanHTML(ch));
+      w.document.close();
+      w.onload = () => setTimeout(() => { w.focus(); w.print(); }, 400);
+      setTimeout(() => { try { w.focus(); w.print(); } catch {} }, 900);
+      return;
+    }
+    openHTML(getChallanHTML(ch), `${ch.number}.html`);
   };
 
   const downloadPDF = ch => {
@@ -1287,14 +1330,329 @@ body{font-family:'Segoe UI',sans-serif;background:#f5f6fa;display:flex;flex-dire
   <div class="footer">Handle with care &nbsp;·&nbsp; ${co.name||""} ${co.phone ? "· "+co.phone : ""}</div>
 </div>
 </body></html>`;
-    const blob = new Blob([html], {type:"text/html;charset=utf-8"});
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = `PackingSlip-${ch.number}.html`;
-    document.body.appendChild(a); a.click(); document.body.removeChild(a);
-    setTimeout(() => URL.revokeObjectURL(url), 3000);
+    openHTML(html, `PackingSlip-${ch.number}.html`);
   };
+  const printOrderSlip = (ord) => {
+    const rows = (ord.items||[]).map((it,idx) => {
+      const bg = idx%2===0?"#fff":"#f9fafb";
+      // Normalize: shop orders use flat {size,qty,price,amount}, manual orders use sizes:[...]
+      const sizes = Array.isArray(it.sizes) ? it.sizes : [{size:it.size, qty:it.qty, price:it.price||0, amount:it.amount||0}];
+      const sizeCells = sizes.map(sz=>`<span style="display:inline-block;background:#eef1ff;border-radius:4px;padding:3px 8px;margin:2px;font-size:11px;text-align:center"><div style="font-weight:800;color:#4361ee">${sz.size}</div><div style="font-weight:700;color:#1a1a2e">${sz.qty} pcs</div><div style="color:#0d9f6e;font-size:10px">Rs.${Number(sz.price||0).toLocaleString("en-IN")}</div></span>`).join("");
+      const totalQty = sizes.reduce((s,sz)=>s+sz.qty,0);
+      const totalAmt = sizes.reduce((s,sz)=>s+(sz.amount||0),0);
+      return `<tr style="background:${bg}">
+        <td style="padding:6px 10px;color:#9ca3af;font-size:11px">${idx+1}</td>
+        <td style="padding:6px 10px"><div style="font-weight:700;font-size:12px">${it.articleName}</div><div style="font-size:10px;color:#9ca3af">${it.skuId||""}</div></td>
+        <td style="padding:6px 10px"><div style="display:flex;align-items:center;gap:6px">${it.colorImage?`<img src="${it.colorImage}" style="width:36px;height:36px;border-radius:6px;object-fit:cover"/>`:""}
+          <span style="font-size:12px;font-weight:600">${it.colorName}</span></div></td>
+        <td style="padding:6px 10px">${sizeCells}</td>
+        <td style="padding:6px 10px;text-align:center;font-weight:700;font-size:13px">${totalQty}</td>
+        <td style="padding:6px 10px;text-align:right;font-weight:700;font-size:12px;color:#0d9f6e">Rs.${Number(totalAmt).toLocaleString("en-IN")}</td>
+      </tr>`;
+    }).join("");
+    const html = `<!DOCTYPE html><html><head><title>Order ${ord.number}</title>
+<style>*{margin:0;padding:0;box-sizing:border-box}body{font-family:'Segoe UI',sans-serif;padding:20px;color:#1a1a2e}
+.no-print{margin-bottom:14px;display:flex;gap:8px}
+.no-print button{padding:8px 18px;border:none;border-radius:7px;cursor:pointer;font-size:13px;font-weight:700;font-family:sans-serif}
+@media print{.no-print{display:none}@page{margin:8mm}}</style></head><body>
+<div class="no-print">
+  <button onclick="window.print()" style="background:#4361ee;color:#fff">🖨 Print / Save PDF</button>
+  <button onclick="window.close()" style="background:#f1f5f9;color:#374151">Close</button>
+</div>
+<div style="border:2px solid #1e293b;border-radius:10px;overflow:hidden">
+  <div style="background:#1e293b;color:#fff;padding:14px 18px;display:flex;justify-content:space-between;align-items:center">
+    <div><div style="font-size:18px;font-weight:800">CUSTOMER ORDER</div><div style="font-size:11px;opacity:.7;margin-top:2px">${ord.number} · ${new Date(ord.date).toLocaleDateString("en-IN",{day:"2-digit",month:"short",year:"numeric"})}</div></div>
+    <div style="text-align:right"><div style="font-size:14px;font-weight:700">${co.name||"Your Company"}</div><div style="font-size:11px;opacity:.7">${co.phone||""}</div></div>
+  </div>
+  <div style="display:grid;grid-template-columns:1fr 1fr;border-bottom:1px solid #e5e7eb">
+    <div style="padding:12px 16px;border-right:1px solid #e5e7eb">
+      <div style="font-size:9px;font-weight:700;text-transform:uppercase;letter-spacing:1px;color:#9ca3af;margin-bottom:4px">Customer</div>
+      <div style="font-size:15px;font-weight:800">${ord.customer?.name||"—"}</div>
+      <div style="font-size:12px;color:#6b7280;margin-top:2px">${ord.customer?.phone||""}</div>
+      ${ord.customer?.address?`<div style="font-size:11px;color:#9ca3af;margin-top:2px">${ord.customer.address}</div>`:""}
+    </div>
+    <div style="padding:12px 16px">
+      <div style="font-size:9px;font-weight:700;text-transform:uppercase;letter-spacing:1px;color:#9ca3af;margin-bottom:4px">Details</div>
+      ${ord.remarks?`<div style="font-size:12px;color:#374151">Note: <strong>${ord.remarks}</strong></div>`:""}
+      <div style="font-size:12px;color:#374151;margin-top:4px">Total: <strong style="color:#0d9f6e">Rs.${Number(ord.totalAmt).toLocaleString("en-IN")}</strong></div>
+      <div style="font-size:12px;color:#374151;margin-top:2px">Pieces: <strong>${ord.totalQty}</strong></div>
+    </div>
+  </div>
+  <table style="width:100%;border-collapse:collapse">
+    <thead><tr style="background:#f8fafc">
+      <th style="padding:8px 10px;text-align:left;font-size:9px;text-transform:uppercase;color:#9ca3af;font-weight:700">#</th>
+      <th style="padding:8px 10px;text-align:left;font-size:9px;text-transform:uppercase;color:#9ca3af;font-weight:700">Article</th>
+      <th style="padding:8px 10px;text-align:left;font-size:9px;text-transform:uppercase;color:#9ca3af;font-weight:700">Color</th>
+      <th style="padding:8px 10px;text-align:left;font-size:9px;text-transform:uppercase;color:#9ca3af;font-weight:700">Sizes / Qty / Rate</th>
+      <th style="padding:8px 10px;text-align:center;font-size:9px;text-transform:uppercase;color:#9ca3af;font-weight:700">Pcs</th>
+      <th style="padding:8px 10px;text-align:right;font-size:9px;text-transform:uppercase;color:#9ca3af;font-weight:700">Amount</th>
+    </tr></thead>
+    <tbody>${rows}
+    <tr style="background:#ecfdf5">
+      <td colspan="4" style="padding:10px;text-align:right;font-weight:800;font-size:12px">Grand Total</td>
+      <td style="padding:10px;text-align:center;font-weight:800">${ord.totalQty} pcs</td>
+      <td style="padding:10px;text-align:right;font-weight:800;color:#0d9f6e;font-size:14px">Rs.${Number(ord.totalAmt).toLocaleString("en-IN")}</td>
+    </tr></tbody>
+  </table>
+  <div style="padding:10px 16px;text-align:center;font-size:10px;color:#9ca3af;border-top:1px solid #e5e7eb">
+    This is a proforma order — not a tax invoice · ${co.name||""} ${co.phone?"· "+co.phone:""}
+  </div>
+</div></body></html>`;
+    openHTML(html, `Order-${ord.number}.html`);
+  };
+
+  const openEditOrder = (ord) => {
+    const cust = customers.find(c => c.id === ord.customerId) ||
+                 customers.find(c => c.phone === ord.customer?.phone) ||
+                 customers.find(c => c.name === ord.customer?.name);
+    const items = (ord.items||[]).map(it => {
+      const sizes = {};
+      const prices = {};
+      (Array.isArray(it.sizes)?it.sizes:[{size:it.size,qty:it.qty,price:it.price||0,amount:it.amount||0}]).forEach(sz => { sizes[sz.size] = sz.qty; prices[sz.size] = sz.price; });
+      return { articleId: it.articleId, colorIdx: String(it.colorIdx), sizes, prices };
+    });
+    setEditingOrder(ord);
+    setOrderForm2({ customerId: cust?.id || "", remarks: ord.remarks || "", items });
+    setShowCreateOrder(true);
+  };
+
+  const saveManualOrder = (printAfter=false) => {
+    if (!orderForm2.customerId || orderForm2.items.length === 0) return;
+    const cust = customers.find(c => c.id === orderForm2.customerId);
+    const valid = orderForm2.items.filter(it => it.articleId && it.colorIdx !== "" && Object.values(it.sizes).some(q=>q>0));
+    if (valid.length === 0) return;
+    const orderItems = valid.map(it => {
+      const art = articles.find(a => a.id === it.articleId);
+      const col = art?.colors[Number(it.colorIdx)];
+      const sizesData = Object.entries(it.sizes).filter(([,q])=>q>0).map(([sz,q])=>{
+        const p = (it.prices?.[sz]!==undefined && it.prices[sz]!=="") ? Number(it.prices[sz]) : (col?.sizes[sz]?.price||0);
+        return {size:sz,qty:q,price:p,amount:q*p};
+      });
+      return {articleId:art.id,colorIdx:Number(it.colorIdx),articleName:art.name,skuId:art.skuId,colorName:col?.name||"",colorImage:col?.image||null,sizes:sizesData};
+    });
+    const tQty = orderItems.reduce((s,it)=>s+(Array.isArray(it.sizes)?it.sizes:[{size:it.size,qty:it.qty,price:it.price||0,amount:it.amount||0}]).reduce((ss,sz)=>ss+sz.qty,0),0);
+    const tAmt = orderItems.reduce((s,it)=>s+(Array.isArray(it.sizes)?it.sizes:[{size:it.size,qty:it.qty,price:it.price||0,amount:it.amount||0}]).reduce((ss,sz)=>ss+sz.amount,0),0);
+    const ord = {
+      id: editingOrder ? editingOrder.id : uid(),
+      number: editingOrder ? editingOrder.number : `ORD-${String(Math.max(0,...orders.map(o=>parseInt(o.number?.replace(/\D/g,""))||0))+1).padStart(4,"0")}`,
+      date: editingOrder ? editingOrder.date : Date.now(),
+      customerId: cust.id,
+      customer:{name:cust.name,phone:cust.phone,address:`${cust.address||""}, ${cust.city||""}, ${cust.state||""}`.replace(/^,\s*/,"")},
+      remarks:orderForm2.remarks,items:orderItems,totalQty:tQty,totalAmt:tAmt,
+      status: editingOrder ? editingOrder.status : "manual",
+      type: editingOrder ? editingOrder.type : "manual"
+    };
+    setOrders(prev => editingOrder ? prev.map(o => o.id===ord.id ? ord : o) : [ord, ...prev]);
+    saveOrderToDB(ord).catch(()=>{});
+    setShowCreateOrder(false);
+    setEditingOrder(null);
+    setOrderForm2(blankOF);
+    if (printAfter) setTimeout(()=>printOrderSlip(ord),300);
+  };
+
+  const openConvertOrder = (ord) => {
+    setConvertingOrder(ord);
+    // Pre-select all items by default
+    const sel = {};
+    ord.items.forEach((_,i) => sel[i] = true);
+    setConvertSelItems(sel);
+    setShowConvertOrder(true);
+  };
+
+  const doConvertToChallan = () => {
+    if (!convertingOrder) return;
+    const cust = customers.find(c => c.name === convertingOrder.customer?.name || c.phone === convertingOrder.customer?.phone);
+    const selectedIdxs = Object.keys(convertSelItems).filter(i => convertSelItems[i]).map(Number);
+    const selectedItems = convertingOrder.items.filter((_,i) => convertSelItems[i]);
+    if (selectedItems.length === 0) return;
+    // Build chf items from selected order items
+    const chfItems = selectedItems.map(it => {
+      const art = articles.find(a => a.id === it.articleId);
+      if (!art) return null;
+      const sizes = {};
+      const prices = {};
+      (Array.isArray(it.sizes)?it.sizes:[{size:it.size,qty:it.qty,price:it.price||0,amount:it.amount||0}]).forEach(sz => { sizes[sz.size] = sz.qty; prices[sz.size] = sz.price; });
+      return { articleId: it.articleId, colorIdx: String(it.colorIdx), sizes, prices };
+    }).filter(Boolean);
+    // Mark selected items as delivered in the order
+    const updatedOrder = {
+      ...convertingOrder,
+      items: (convertingOrder.items||[]).map((it, i) =>
+        selectedIdxs.includes(i) ? {...it, delivered: true} : it
+      )
+    };
+    setOrders(prev => prev.map(o => o.id === convertingOrder.id ? updatedOrder : o));
+    saveOrderToDB(updatedOrder).catch(()=>{});
+    setEditCh(null);
+    setEditChArts(null);
+    setChf({
+      customerId: cust?.id || "",
+      lrNumber: "",
+      remarks: `Converted from ${convertingOrder.number}`,
+      items: chfItems
+    });
+    setShowConvertOrder(false);
+    setShowChModal(true);
+  };
+
+  const printArticleReport = (artEntries, allTxns) => {
+    try {
+    const sizeOrder = ["S","M","L","XL","XXL","3XL","4XL","5XL","6XL","7XL"];
+    const sortSizes = sizes => [...sizes].sort((a,b)=>(sizeOrder.indexOf(a)===-1?99:sizeOrder.indexOf(a))-(sizeOrder.indexOf(b)===-1?99:sizeOrder.indexOf(b)));
+
+    const articleBlocks = artEntries.map(art => {
+      // Collect all sizes across article
+      const allSizesSet = new Set();
+      Object.values(art.parties).forEach(p => p.txns.forEach(t => t.sizes.forEach(sz => allSizesSet.add(sz.size))));
+      const allSizes = sortSizes([...allSizesSet]);
+
+      // Party rows: for each party → colors → sizes
+      let artTotalQty = 0, artTotalAmt = 0;
+      const partyBlocks = Object.values(art.parties).map((p,pi) => {
+        // Group txns by color
+        const colorMap = {};
+        p.txns.forEach(t => {
+          if (!colorMap[t.colorName]) colorMap[t.colorName] = {sizes:{}, qty:0, amt:0, refs:[]};
+          t.sizes.forEach(sz => {
+            colorMap[t.colorName].sizes[sz.size] = (colorMap[t.colorName].sizes[sz.size]||0) + sz.qty;
+            colorMap[t.colorName].qty += sz.qty;
+            colorMap[t.colorName].amt += (sz.amount||0);
+          });
+          colorMap[t.colorName].refs.push(t.number);
+        });
+
+        const partyTotalQty = Object.values(colorMap).reduce((s,c)=>s+c.qty,0);
+        const partyTotalAmt = Object.values(colorMap).reduce((s,c)=>s+c.amt,0);
+        artTotalQty += partyTotalQty;
+        artTotalAmt += partyTotalAmt;
+
+        const colorRows = Object.entries(colorMap).map(([color, data], ci) => {
+          const h = color.split("").reduce((a,c)=>a+c.charCodeAt(0),0)%360;
+          const sizeCells = allSizes.map(sz => {
+            const q = data.sizes[sz]||0;
+            return `<td style="padding:5px 8px;text-align:center;font-size:13px;font-weight:${q>0?"800":"400"};color:${q>0?"#1e293b":"#cbd5e1"};background:${q>0?"#dbeafe":"transparent"}">${q>0?q:"—"}</td>`;
+          }).join("");
+          return `<tr style="background:${ci%2===0?"#fff":"#f8fafc"}">
+            <td style="padding:4px 8px 4px 24px;font-size:11px">
+              <div style="display:flex;align-items:center;gap:5px">
+                <div style="width:10px;height:10px;border-radius:50%;background:hsl(${h},55%,55%);flex-shrink:0"></div>
+                <span style="font-weight:600;color:#374151">${color}</span>
+                <span style="color:#9ca3af;font-size:9px">${data.refs.slice(0,2).join(", ")}${data.refs.length>2?` +${data.refs.length-2}`:""}</span>
+              </div>
+            </td>
+            ${sizeCells}
+            <td style="padding:5px 8px;text-align:center;font-weight:700;font-size:12px;color:#0891b2">${data.qty}</td>
+            <td style="padding:5px 8px;text-align:right;font-size:11px;font-weight:600;color:#0d9f6e">Rs.${Number(data.amt).toLocaleString("en-IN")}</td>
+          </tr>`;
+        }).join("");
+
+        // Party subtotal row
+        const partySubtotals = allSizes.map(sz => {
+          const q = Object.values(colorMap).reduce((s,c)=>s+(c.sizes[sz]||0),0);
+          return `<td style="padding:5px 8px;text-align:center;font-weight:800;font-size:12px;color:#4361ee;background:#ede9fe">${q>0?q:"—"}</td>`;
+        }).join("");
+
+        return `
+          <tr style="background:#f5f3ff;border-top:2px solid #c4b5fd">
+            <td style="padding:7px 10px;font-weight:800;font-size:13px;color:#7c3aed">
+              ${p.party}
+              <div style="font-size:10px;color:#a78bfa;font-weight:500">${p.phone||""}</div>
+            </td>
+            ${allSizes.map(()=>`<td style="background:#f5f3ff"></td>`).join("")}
+            <td></td><td></td>
+          </tr>
+          ${colorRows}
+          <tr style="background:#ede9fe;border-bottom:2px solid #c4b5fd">
+            <td style="padding:5px 10px 5px 20px;font-size:11px;font-weight:700;color:#6d28d9">↳ Subtotal</td>
+            ${partySubtotals}
+            <td style="padding:5px 8px;text-align:center;font-weight:800;font-size:13px;color:#7c3aed">${partyTotalQty}</td>
+            <td style="padding:5px 8px;text-align:right;font-weight:700;font-size:12px;color:#0d9f6e">Rs.${Number(partyTotalAmt).toLocaleString("en-IN")}</td>
+          </tr>`;
+      }).join("");
+
+      // Grand total row
+      const grandTotals = allSizes.map(sz => {
+        const q = Object.values(art.parties).reduce((s,p)=>s+p.txns.reduce((ss,t)=>ss+t.sizes.reduce((sss,sz2)=>sz2.size===sz?sss+sz2.qty:sss,0),0),0);
+        return `<td style="padding:6px 8px;text-align:center;font-weight:900;font-size:14px;color:#fff;background:#1e293b">${q>0?q:"—"}</td>`;
+      }).join("");
+
+      const sizeHeaders = allSizes.map(sz=>`<th style="padding:6px 8px;text-align:center;font-size:10px;font-weight:800;color:#fff;background:#1e293b;min-width:44px;letter-spacing:.5px">${sz}</th>`).join("");
+
+      return `
+        <div style="margin-bottom:24px;border:2px solid #1e293b;border-radius:12px;overflow:hidden;page-break-inside:avoid">
+          <div style="background:linear-gradient(135deg,#1e293b,#334155);color:#fff;padding:12px 16px;display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px">
+            <div>
+              <div style="font-size:17px;font-weight:900;letter-spacing:-.3px">${art.articleName}</div>
+              <div style="font-size:10px;opacity:.55;margin-top:2px;font-family:monospace">${art.skuId||""}</div>
+            </div>
+            <div style="display:flex;gap:20px;text-align:center">
+              <div><div style="font-size:9px;opacity:.5;text-transform:uppercase;letter-spacing:.8px">Parties</div><div style="font-size:20px;font-weight:900">${Object.keys(art.parties).length}</div></div>
+              <div><div style="font-size:9px;opacity:.5;text-transform:uppercase;letter-spacing:.8px">Total Pcs</div><div style="font-size:20px;font-weight:900;color:#7dd3fc">${artTotalQty}</div></div>
+              <div><div style="font-size:9px;opacity:.5;text-transform:uppercase;letter-spacing:.8px">Amount</div><div style="font-size:16px;font-weight:800;color:#6ee7b7">Rs.${Number(artTotalAmt).toLocaleString("en-IN")}</div></div>
+            </div>
+          </div>
+          <div style="overflow-x:auto">
+            <table style="width:100%;border-collapse:collapse;min-width:400px">
+              <thead>
+                <tr style="background:#1e293b">
+                  <th style="padding:6px 10px;text-align:left;font-size:10px;font-weight:800;color:#94a3b8">PARTY / COLOR</th>
+                  ${sizeHeaders}
+                  <th style="padding:6px 8px;text-align:center;font-size:10px;font-weight:800;color:#fff;background:#0891b2">TOTAL</th>
+                  <th style="padding:6px 8px;text-align:right;font-size:10px;font-weight:800;color:#fff;background:#0d9f6e">AMT</th>
+                </tr>
+              </thead>
+              <tbody>
+                ${partyBlocks}
+                <tr style="background:#1e293b">
+                  <td style="padding:8px 10px;font-weight:900;font-size:13px;color:#f8fafc">GRAND TOTAL</td>
+                  ${grandTotals}
+                  <td style="padding:6px 8px;text-align:center;font-weight:900;font-size:16px;color:#7dd3fc;background:#1e293b">${artTotalQty}</td>
+                  <td style="padding:6px 8px;text-align:right;font-weight:800;font-size:13px;color:#6ee7b7;background:#1e293b">Rs.${Number(artTotalAmt).toLocaleString("en-IN")}</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </div>`;
+    }).join("");
+
+    const grandTotal = artEntries.reduce((s,art)=>s+Object.values(art.parties).reduce((ss,p)=>ss+p.txns.reduce((sss,t)=>sss+t.sizes.reduce((q,sz)=>q+sz.qty,0),0),0),0);
+    const grandAmt = artEntries.reduce((s,art)=>s+Object.values(art.parties).reduce((ss,p)=>ss+p.txns.reduce((sss,t)=>sss+t.sizes.reduce((q,sz)=>q+(sz.amount||0),0),0),0),0);
+
+    const html = `<!DOCTYPE html><html><head><title>Article Report</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+body{font-family:'Segoe UI',sans-serif;padding:20px;color:#1a1a2e;background:#f8fafc}
+.no-print{margin-bottom:16px;display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+.no-print button{padding:8px 18px;border:none;border-radius:7px;cursor:pointer;font-size:13px;font-weight:700;font-family:sans-serif}
+.report-header{background:#1e293b;color:#fff;border-radius:12px;padding:16px 20px;margin-bottom:20px;display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:12px}
+@media print{
+  .no-print{display:none}
+  body{background:#fff;padding:8px}
+  @page{margin:6mm;size:A4 landscape}
+}
+</style></head><body>
+<div class="no-print">
+  <button onclick="window.print()" style="background:#4361ee;color:#fff">🖨 Print / Save PDF</button>
+  <button onclick="window.close()" style="background:#f1f5f9;color:#374151">Close</button>
+  <span style="font-size:12px;color:#64748b">Tip: Print in Landscape for best results</span>
+</div>
+<div class="report-header">
+  <div>
+    <div style="font-size:20px;font-weight:900">📦 Article-wise Order Report</div>
+    <div style="font-size:11px;opacity:.6;margin-top:3px">${co.name||"Your Company"} &nbsp;·&nbsp; ${new Date().toLocaleDateString("en-IN",{day:"2-digit",month:"short",year:"numeric"})}</div>
+  </div>
+  <div style="display:flex;gap:24px;text-align:center">
+    <div><div style="font-size:9px;opacity:.5;text-transform:uppercase">Articles</div><div style="font-size:22px;font-weight:900">${artEntries.length}</div></div>
+    <div><div style="font-size:9px;opacity:.5;text-transform:uppercase">Total Pcs</div><div style="font-size:22px;font-weight:900;color:#7dd3fc">${grandTotal}</div></div>
+    <div><div style="font-size:9px;opacity:.5;text-transform:uppercase">Total Amount</div><div style="font-size:18px;font-weight:800;color:#6ee7b7">Rs.${Number(grandAmt).toLocaleString("en-IN")}</div></div>
+  </div>
+</div>
+${articleBlocks}
+</body></html>`;
+    openHTML(html, `ArticleReport-${new Date().toISOString().slice(0,10)}.html`);
+    } catch(e) { alert("Error generating report: " + e.message); console.error(e); }
+  };
+
   const buildSystemPrompt = () => {
     const artList = articles.map(a => {
       const colorDetails = a.colors.map(c => {
@@ -1581,7 +1939,7 @@ GUIDELINES:
             <h1 style={{margin:0,fontSize:15,fontWeight:800,letterSpacing:-.3,whiteSpace:"nowrap"}}>InvenTrack</h1>
           </div>
           <div style={{display:"flex",background:S.bg,borderRadius:10,padding:3,gap:2}}>
-            {[{id:"inventory",label:"Inventory",ic:<Package size={14}/>},{id:"customers",label:"Customers",ic:<Users size={14}/>},{id:"challans",label:"Challans",ic:<FileText size={14}/>},{id:"orders",label:"Orders",ic:<ClipboardList size={14}/>,badge:orders.filter(o=>o.status==="pending").length}].map(t =>
+            {[{id:"inventory",label:"Inventory",ic:<Package size={14}/>},{id:"customers",label:"Customers",ic:<Users size={14}/>},{id:"challans",label:"Challans",ic:<FileText size={14}/>},{id:"orders",label:"Orders",ic:<ClipboardList size={14}/>,badge:orders.filter(o=>o.status==="pending").length},{id:"reports",label:"Reports",ic:<Star size={14}/>}].map(t =>
               <button key={t.id} onClick={() => setTab(t.id)} style={{position:"relative",display:"flex",alignItems:"center",gap:5,padding:"7px 10px",borderRadius:8,border:"none",background:tab===t.id?S.card:"transparent",color:tab===t.id?S.acc:S.txt2,fontFamily:S.f,fontSize:11,fontWeight:tab===t.id?700:500,cursor:"pointer",boxShadow:tab===t.id?"0 1px 3px rgba(0,0,0,.08)":"none"}}>
                 {t.ic}<span className="tab-label">{t.label}</span>
                 {t.badge > 0 && <span style={{position:"absolute",top:2,right:2,background:S.red,color:"#fff",borderRadius:20,fontSize:9,fontWeight:800,padding:"0 4px",minWidth:14,textAlign:"center",lineHeight:"14px"}}>{t.badge}</span>}
@@ -1616,7 +1974,7 @@ GUIDELINES:
       {tab === "inventory" && <>
         <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:14,flexWrap:"wrap",gap:8}}>
           <h2 style={{margin:0,fontSize:17,fontWeight:800}}>Inventory</h2>
-          <div style={{display:"flex",gap:6}}><Btn v="secondary" sz="sm" icon={<ImageIcon size={13}/>} onClick={() => setShowCatBanners(true)}>Shop Banners</Btn><Btn v="secondary" sz="sm" icon={<Settings size={13}/>} onClick={() => setShowCats(true)}>Categories</Btn><Btn sz="sm" icon={<Plus size={14}/>} onClick={openAddArt}>New Article</Btn></div>
+          <div style={{display:"flex",gap:6}}><Btn v="secondary" sz="sm" icon={<Grid3X3 size={13}/>} onClick={() => setShowStockView(true)}>Stock View</Btn><Btn v="secondary" sz="sm" icon={<ImageIcon size={13}/>} onClick={() => setShowCatBanners(true)}>Shop Banners</Btn><Btn v="secondary" sz="sm" icon={<Settings size={13}/>} onClick={() => setShowCats(true)}>Categories</Btn><Btn sz="sm" icon={<Plus size={14}/>} onClick={openAddArt}>New Article</Btn></div>
         </div>
         <div className="stat-grid" style={{display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:8,marginBottom:14}}>
           <Stat icon={<Package size={16}/>} label="Articles" value={articles.length} color={S.acc}/>
@@ -1887,7 +2245,7 @@ GUIDELINES:
                     </div>
                     {/* Items with images */}
                     <div style={{display:"flex",flexDirection:"column",gap:8}}>
-                      {ch.items.map((it, ii) => (
+                      {(ch.items||[]).map((it, ii) => (
                         <div key={ii} style={{background:S.bg,borderRadius:10,padding:12,border:`1px solid ${S.bdr}`}}>
                           <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:8}}>
                             {it.colorImage && <img src={it.colorImage} alt="" style={{width:44,height:44,borderRadius:8,objectFit:"cover",border:`1px solid ${S.bdr}`}}/>}
@@ -1900,7 +2258,7 @@ GUIDELINES:
                             </div>
                           </div>
                           <div style={{display:"flex",gap:6,flexWrap:"wrap"}}>
-                            {it.sizes.map((sz,si) => (
+                            {(Array.isArray(it.sizes)?it.sizes:[{size:it.size,qty:it.qty,price:it.price||0,amount:it.amount||0}]).map((sz,si) => (
                               <div key={si} style={{background:S.card,borderRadius:8,padding:"6px 10px",border:`1px solid ${S.bdr}`,textAlign:"center",minWidth:60}}>
                                 <div style={{fontSize:10,fontWeight:700,color:S.acc}}>{sz.size}</div>
                                 <div style={{fontSize:14,fontWeight:800,fontFamily:S.fm,color:S.txt}}>{sz.qty}</div>
@@ -1909,7 +2267,7 @@ GUIDELINES:
                             ))}
                           </div>
                           <div style={{textAlign:"right",fontSize:12,fontWeight:700,color:S.grn,marginTop:8}}>
-                            {it.sizes.reduce((s,sz)=>s+sz.qty,0)} pcs · {fmtR(it.sizes.reduce((s,sz)=>s+sz.amount,0))}
+                            {(Array.isArray(it.sizes)?it.sizes:[{size:it.size,qty:it.qty,price:it.price||0,amount:it.amount||0}]).reduce((s,sz)=>s+sz.qty,0)} pcs · {fmtR((Array.isArray(it.sizes)?it.sizes:[{size:it.size,qty:it.qty,price:it.price||0,amount:it.amount||0}]).reduce((s,sz)=>s+sz.amount,0))}
                           </div>
                         </div>
                       ))}
@@ -1938,6 +2296,7 @@ GUIDELINES:
           <div style={{display:"flex",gap:6,alignItems:"center",flexWrap:"wrap"}}>
             <Tag color={S.amb}>{orders.filter(o=>o.status==="pending").length} Pending</Tag>
             <Tag color={S.grn}>{orders.filter(o=>o.status==="approved").length} Approved</Tag>
+            <Btn sz="sm" icon={<Plus size={13}/>} onClick={()=>{setOrderForm2(blankOF);setShowCreateOrder(true);}}>Create Order</Btn>
             <Btn sz="sm" icon={<ExternalLink size={13}/>} onClick={shareLink} v="secondary">{linkCopied?"Copied! ✓":"Share Shop Link"}</Btn>
             <Btn sz="sm" icon={<KeyRound size={13}/>} onClick={()=>setShowChangePIN(true)} v="secondary">Change PIN</Btn>
           </div>
@@ -1953,9 +2312,15 @@ GUIDELINES:
           <div style={{display:"flex",flexDirection:"column",gap:8}}>
             {orders.map(ord => {
               const isE = expandedOrder === ord.id;
-              const statusColor = {pending:S.amb,approved:S.grn,rejected:S.red}[ord.status];
-              const statusBg = {pending:S.ambL,approved:S.grnL,rejected:S.redL}[ord.status];
-              const StatusIcon = {pending:Clock,approved:CheckCircle,rejected:XCircle}[ord.status];
+              const isManual = ord.type === "manual";
+              const deliveredCount = (ord.items||[]).filter(it=>it.delivered).length;
+              const totalItems = (ord.items||[]).length;
+              const isFullyDelivered = totalItems > 0 && deliveredCount === totalItems;
+              const isPartialDelivered = deliveredCount > 0 && deliveredCount < totalItems;
+              const statusColor = isFullyDelivered?S.grn:isPartialDelivered?S.tea:{pending:S.amb,approved:S.grn,rejected:S.red,manual:S.pur}[ord.status]||S.pur;
+              const statusBg = isFullyDelivered?S.grnL:isPartialDelivered?S.teaL:{pending:S.ambL,approved:S.grnL,rejected:S.redL,manual:S.purL}[ord.status]||S.purL;
+              const StatusIcon = isFullyDelivered?CheckCircle:isPartialDelivered?Truck:{pending:Clock,approved:CheckCircle,rejected:XCircle,manual:FileText}[ord.status]||FileText;
+              const statusLabel = isFullyDelivered?"Delivered":isPartialDelivered?"Partial":ord.status.charAt(0).toUpperCase()+ord.status.slice(1);
               return (
                 <div key={ord.id}>
                   <div style={{background:S.card,borderRadius:isE?"10px 10px 0 0":10,border:`1px solid ${isE?S.bdrD:S.bdr}`,borderBottom:isE?"none":undefined}}>
@@ -1968,7 +2333,7 @@ GUIDELINES:
                         </div>
                       </div>
                       <div style={{display:"flex",alignItems:"center",gap:8,flexWrap:"wrap"}}>
-                        <span style={{display:"inline-flex",alignItems:"center",gap:4,padding:"4px 10px",borderRadius:20,background:statusBg,color:statusColor,fontSize:11,fontWeight:700}}><StatusIcon size={11}/>{ord.status.charAt(0).toUpperCase()+ord.status.slice(1)}</span>
+                        <span style={{display:"inline-flex",alignItems:"center",gap:4,padding:"4px 10px",borderRadius:20,background:statusBg,color:statusColor,fontSize:11,fontWeight:700}}><StatusIcon size={11}/>{statusLabel}</span>
                         <Tag color={S.tea}>{ord.totalQty} pcs</Tag>
                         <span style={{fontSize:13,fontWeight:700,color:S.grn}}>{fmtR(ord.totalAmt)}</span>
                         {ord.status === "pending" && (
@@ -1983,24 +2348,63 @@ GUIDELINES:
                   {isE && (
                     <div style={{background:S.card,borderRadius:"0 0 10px 10px",border:`1px solid ${S.bdrD}`,borderTop:`1px dashed ${S.bdr}`,padding:14}}>
                       {ord.note && <div style={{background:S.ambL,borderRadius:8,padding:"8px 12px",marginBottom:12,fontSize:12,color:S.amb}}>📝 {ord.note}</div>}
+                      {/* Delivery summary bar */}
+                      {ord.items?.some(it=>it.delivered) && (() => {
+                        const delivered = ord.items.filter(it=>it.delivered).length;
+                        const pending = ord.items.length - delivered;
+                        return (
+                          <div style={{display:"flex",gap:8,marginBottom:10,padding:"8px 12px",background:pending===0?S.grnL:S.ambL,borderRadius:8,alignItems:"center",flexWrap:"wrap"}}>
+                            <span style={{fontSize:12,fontWeight:700,color:pending===0?S.grn:S.amb}}>{pending===0?"✅ Fully Delivered":"⏳ Partially Delivered"}</span>
+                            <Tag color={S.grn}>{delivered} Delivered</Tag>
+                            {pending>0 && <Tag color={S.amb}>{pending} Pending</Tag>}
+                          </div>
+                        );
+                      })()}
                       <div style={{display:"flex",flexDirection:"column",gap:8}}>
-                        {ord.items.map((it,i) => (
-                          <div key={i} style={{background:S.bg,borderRadius:10,padding:12,border:`1px solid ${S.bdr}`,display:"flex",alignItems:"center",gap:10}}>
-                            {it.colorImage && <img src={it.colorImage} alt="" style={{width:44,height:44,borderRadius:8,objectFit:"cover",flexShrink:0}}/>}
-                            <div style={{flex:1}}>
-                              <div style={{fontSize:13,fontWeight:700}}>{it.articleName}</div>
-                              <div style={{display:"flex",gap:6,alignItems:"center",marginTop:3,flexWrap:"wrap"}}>
-                                <ColorDot name={it.colorName}/>
-                                <Tag color={S.acc}>Size {it.size}</Tag>
-                                <span style={{fontSize:12,fontWeight:600}}>×{it.qty}</span>
-                                <span style={{fontSize:12,fontWeight:700,color:S.grn}}>{fmtS(it.amount)}</span>
+                        {(ord.items||[]).map((it,i) => {
+                          const isDelivered = !!it.delivered;
+                          const isManualOrd = ord.type === "manual";
+                          const sizes = Array.isArray(it.sizes) ? it.sizes : [{size:it.size, qty:it.qty, price:it.price||0, amount:it.amount||0}];
+                          return (
+                            <div key={i} style={{background:isDelivered?S.grnL:S.bg,borderRadius:10,padding:12,border:`2px solid ${isDelivered?S.grn+"50":S.bdr}`,display:"flex",alignItems:"center",gap:10,opacity:isDelivered?0.85:1,transition:"all .2s"}}>
+                              {it.colorImage && <img src={it.colorImage} alt="" style={{width:44,height:44,borderRadius:8,objectFit:"cover",flexShrink:0,filter:isDelivered?"grayscale(30%)":"none"}}/>}
+                              <div style={{flex:1}}>
+                                <div style={{display:"flex",alignItems:"center",gap:6,flexWrap:"wrap"}}>
+                                  <span style={{fontSize:13,fontWeight:700,color:isDelivered?S.grn:S.txt}}>{it.articleName}</span>
+                                  {isManualOrd && isDelivered && <span style={{background:S.grn,color:"#fff",fontSize:9,fontWeight:800,padding:"2px 7px",borderRadius:20,letterSpacing:.5}}>✓ DELIVERED</span>}
+                                  {isManualOrd && !isDelivered && <span style={{background:S.amb,color:"#fff",fontSize:9,fontWeight:800,padding:"2px 7px",borderRadius:20,letterSpacing:.5}}>PENDING</span>}
+                                </div>
+                                <div style={{display:"flex",gap:6,alignItems:"center",marginTop:4,flexWrap:"wrap"}}>
+                                  <ColorDot name={it.colorName}/>
+                                  {sizes.map((sz,si)=>(
+                                    <div key={si} style={{background:isDelivered?"#d1fae5":"#eef1ff",borderRadius:8,padding:"4px 8px",textAlign:"center",border:`1px solid ${isDelivered?S.grn+"30":S.acc+"20"}`}}>
+                                      <div style={{fontSize:11,fontWeight:800,color:isDelivered?S.grn:S.acc}}>{sz.size}</div>
+                                      <div style={{fontSize:12,fontWeight:700,color:S.txt}}>{sz.qty} pcs</div>
+                                      <div style={{fontSize:10,fontWeight:600,color:S.grn}}>{fmtS(sz.price||0)}</div>
+                                    </div>
+                                  ))}
+                                  <div style={{marginLeft:4,paddingLeft:8,borderLeft:`2px solid ${S.bdr}`}}>
+                                    <div style={{fontSize:10,color:S.txt3}}>Total</div>
+                                    <div style={{fontSize:13,fontWeight:800,color:S.grn}}>{fmtR(sizes.reduce((s,sz)=>s+(sz.amount||0),0))}</div>
+                                  </div>
+                                </div>
                               </div>
                             </div>
-                          </div>
-                        ))}
+                          );
+                        })}
                       </div>
-                      <div style={{display:"flex",justifyContent:"flex-end",marginTop:10,paddingTop:10,borderTop:`1px solid ${S.bdr}`}}>
+                      <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginTop:10,paddingTop:10,borderTop:`1px solid ${S.bdr}`}}>
                         <span style={{fontWeight:800,fontSize:15,color:S.grn}}>{fmtR(ord.totalAmt)}</span>
+                        <div style={{display:"flex",gap:6,flexWrap:"wrap"}}>
+                          {ord.items?.length > 0 && <button onClick={()=>openConvertOrder(ord)} style={{display:"flex",alignItems:"center",gap:6,padding:"8px 14px",background:S.grnL,border:`1px solid ${S.grn}40`,borderRadius:8,cursor:"pointer",color:S.grn,fontSize:12,fontWeight:700,fontFamily:S.f}}><FileText size={14}/>Convert to Challan</button>}
+                          <button onClick={()=>openEditOrder(ord)} style={{display:"flex",alignItems:"center",gap:6,padding:"8px 14px",background:S.accL,border:"none",borderRadius:8,cursor:"pointer",color:S.acc,fontSize:12,fontWeight:700,fontFamily:S.f}}><Edit3 size={14}/>Edit Order</button>
+                          <button onClick={()=>printOrderSlip(ord)} style={{display:"flex",alignItems:"center",gap:6,padding:"8px 16px",background:`linear-gradient(135deg,${S.pur},#9333ea)`,border:"none",borderRadius:8,cursor:"pointer",color:"#fff",fontSize:12,fontWeight:700,fontFamily:S.f}}>
+                            <Printer size={14}/>Print / Share
+                          </button>
+                          <button onClick={()=>askConfirm(`Delete ${ord.number}?`,`This will permanently delete the order for ${ord.customer?.name}. This cannot be undone.`,()=>{setOrders(prev=>prev.filter(o=>o.id!==ord.id));deleteOrderFromDB(ord.id).catch(()=>{});setExpandedOrder(null);})} style={{display:"flex",alignItems:"center",gap:6,padding:"8px 14px",background:S.redL,border:"none",borderRadius:8,cursor:"pointer",color:S.red,fontSize:12,fontWeight:700,fontFamily:S.f}}>
+                            <Trash2 size={14}/>Delete
+                          </button>
+                        </div>
                       </div>
                     </div>
                   )}
@@ -2010,6 +2414,202 @@ GUIDELINES:
           </div>
         )}
       </>}
+
+      {/* ═══ REPORTS TAB ═══ */}
+      {tab === "reports" && (() => {
+        // Combine all challans + approved/manual orders into one dataset
+        const allTxns = [
+          ...challans.map(ch => ({
+            type:"challan", number:ch.number, date:ch.date,
+            party: ch.customer.name, phone: ch.customer.phone,
+            items: (ch.items||[]).map(it => ({
+              articleId:it.articleId, articleName:it.articleName, skuId:it.skuId,
+              colorName:it.colorName, colorImage:it.colorImage,
+              sizes:it.sizes
+            }))
+          })),
+          ...orders.filter(o=>o.type==="manual"||o.status==="approved").map(o => ({
+            type:"order", number:o.number, date:o.date,
+            party:o.customer?.name||"—", phone:o.customer?.phone||"",
+            items:(o.items||[]).map(it => ({
+              articleId:it.articleId, articleName:it.articleName, skuId:it.skuId||"",
+              colorName:it.colorName, colorImage:it.colorImage,
+              sizes: Array.isArray(it.sizes) ? it.sizes : [{size:it.size,qty:it.qty,price:it.price,amount:it.amount}]
+            }))
+          }))
+        ];
+
+        // ── Article-wise view: each article → parties who ordered it ──
+        const articleMap = {};
+        allTxns.forEach(txn => {
+          txn.items.forEach(it => {
+            if (!it.articleName) return;
+            const key = it.articleId || it.articleName;
+            if (!articleMap[key]) articleMap[key] = { articleName:it.articleName, skuId:it.skuId, colorImage:it.colorImage, parties:{} };
+            const pKey = txn.party;
+            if (!articleMap[key].parties[pKey]) articleMap[key].parties[pKey] = { party:txn.party, phone:txn.phone, txns:[] };
+            articleMap[key].parties[pKey].txns.push({ number:txn.number, date:txn.date, type:txn.type, colorName:it.colorName, sizes:it.sizes });
+          });
+        });
+
+        // ── Party-wise view: each party → articles they ordered ──
+        const partyMap = {};
+        allTxns.forEach(txn => {
+          const key = txn.party;
+          if (!partyMap[key]) partyMap[key] = { party:txn.party, phone:txn.phone, articles:{} };
+          txn.items.forEach(it => {
+            if (!it.articleName) return;
+            const aKey = it.articleId || it.articleName;
+            if (!partyMap[key].articles[aKey]) partyMap[key].articles[aKey] = { articleName:it.articleName, skuId:it.skuId, colorImage:it.colorImage, txns:[] };
+            partyMap[key].articles[aKey].txns.push({ number:txn.number, date:txn.date, type:txn.type, colorName:it.colorName, sizes:it.sizes });
+          });
+        });
+
+        const artEntries = Object.values(articleMap).filter(a => a.articleName.toLowerCase().includes(reportSearch.toLowerCase()) || a.skuId?.toLowerCase().includes(reportSearch.toLowerCase()));
+        const partyEntries = Object.values(partyMap).filter(p => p.party.toLowerCase().includes(reportSearch.toLowerCase()) || p.phone?.includes(reportSearch));
+
+        return <>
+          <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:14,flexWrap:"wrap",gap:8}}>
+            <h2 style={{margin:0,fontSize:17,fontWeight:800}}>Order Reports</h2>
+            <div style={{display:"flex",gap:6,alignItems:"center",flexWrap:"wrap"}}>
+              <div style={{display:"flex",background:S.bg,borderRadius:8,padding:3,gap:2}}>
+                <button onClick={()=>setReportView("article")} style={{padding:"6px 14px",borderRadius:6,border:"none",background:reportView==="article"?S.card:"transparent",color:reportView==="article"?S.acc:S.txt2,fontFamily:S.f,fontSize:12,fontWeight:reportView==="article"?700:500,cursor:"pointer",boxShadow:reportView==="article"?"0 1px 3px rgba(0,0,0,.08)":"none"}}>Article-wise</button>
+                <button onClick={()=>setReportView("party")} style={{padding:"6px 14px",borderRadius:6,border:"none",background:reportView==="party"?S.card:"transparent",color:reportView==="party"?S.acc:S.txt2,fontFamily:S.f,fontSize:12,fontWeight:reportView==="party"?700:500,cursor:"pointer",boxShadow:reportView==="party"?"0 1px 3px rgba(0,0,0,.08)":"none"}}>Party-wise</button>
+              </div>
+              {reportView==="article" && artEntries.length>0 && (
+                <button onClick={()=>printArticleReport(artEntries, allTxns)} style={{display:"flex",alignItems:"center",gap:6,padding:"7px 14px",background:`linear-gradient(135deg,${S.pur},#9333ea)`,border:"none",borderRadius:8,cursor:"pointer",color:"#fff",fontSize:12,fontWeight:700,fontFamily:S.f}}>
+                  <Download size={13}/>Export PDF
+                </button>
+              )}
+            </div>
+          </div>
+
+          {/* Summary Stats */}
+          <div className="stat-grid" style={{display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:8,marginBottom:14}}>
+            <Stat icon={<Package size={16}/>} label="Articles" value={Object.keys(articleMap).length} color={S.acc}/>
+            <Stat icon={<Users size={16}/>} label="Parties" value={Object.keys(partyMap).length} color={S.pur}/>
+            <Stat icon={<FileText size={16}/>} label="Challans" value={challans.length} color={S.tea}/>
+            <Stat icon={<ClipboardList size={16}/>} label="Orders" value={orders.filter(o=>o.type==="manual"||o.status==="approved").length} color={S.grn}/>
+          </div>
+
+          {/* Search */}
+          <div style={{marginBottom:14}}>
+            <Inp icon={<Search size={14}/>} placeholder={reportView==="article"?"Search article name or SKU...":"Search party name or phone..."} value={reportSearch} onChange={e=>setReportSearch(e.target.value)}/>
+          </div>
+
+          {/* ── ARTICLE-WISE VIEW ── */}
+          {reportView==="article" && (
+            artEntries.length===0
+            ? <div style={{textAlign:"center",padding:"40px 20px",color:S.txt3}}><Package size={36} style={{margin:"0 auto 10px",display:"block"}}/><div>No data yet</div></div>
+            : <div style={{display:"flex",flexDirection:"column",gap:8}}>
+                {artEntries.map((art,ai) => {
+                  const totalQty = Object.values(art.parties).reduce((s,p)=>s+p.txns.reduce((ss,t)=>ss+t.sizes.reduce((sss,sz)=>sss+sz.qty,0),0),0);
+                  const totalAmt = Object.values(art.parties).reduce((s,p)=>s+p.txns.reduce((ss,t)=>ss+t.sizes.reduce((sss,sz)=>sss+(sz.amount||0),0),0),0);
+                  return (
+                    <div key={ai} style={{background:S.card,borderRadius:12,border:`1px solid ${S.bdr}`,overflow:"hidden"}}>
+                      {/* Article Header */}
+                      <div style={{padding:"12px 16px",background:`linear-gradient(135deg,${S.accL},${S.purL})`,display:"flex",alignItems:"center",gap:12,borderBottom:`1px solid ${S.bdr}`}}>
+                        {art.colorImage && <img src={art.colorImage} alt="" style={{width:44,height:44,borderRadius:8,objectFit:"cover",flexShrink:0,border:`1px solid ${S.bdr}`}}/>}
+                        <div style={{flex:1}}>
+                          <div style={{fontSize:14,fontWeight:800}}>{art.articleName}</div>
+                          <div style={{fontSize:11,color:S.txt2,fontFamily:S.fm}}>{art.skuId}</div>
+                        </div>
+                        <div style={{display:"flex",gap:16,flexShrink:0}}>
+                          <div style={{textAlign:"center"}}><div style={{fontSize:9,fontWeight:700,color:S.txt3,textTransform:"uppercase"}}>Parties</div><div style={{fontSize:16,fontWeight:800,color:S.acc}}>{Object.keys(art.parties).length}</div></div>
+                          <div style={{textAlign:"center"}}><div style={{fontSize:9,fontWeight:700,color:S.txt3,textTransform:"uppercase"}}>Total Pcs</div><div style={{fontSize:16,fontWeight:800,color:S.tea}}>{totalQty}</div></div>
+                          <div style={{textAlign:"center"}}><div style={{fontSize:9,fontWeight:700,color:S.txt3,textTransform:"uppercase"}}>Total Amt</div><div style={{fontSize:15,fontWeight:800,color:S.grn}}>{fmtR(totalAmt)}</div></div>
+                        </div>
+                      </div>
+                      {/* Party rows */}
+                      {Object.values(art.parties).map((p,pi) => {
+                        const pQty = p.txns.reduce((s,t)=>s+t.sizes.reduce((ss,sz)=>ss+sz.qty,0),0);
+                        const pAmt = p.txns.reduce((s,t)=>s+t.sizes.reduce((ss,sz)=>ss+(sz.amount||0),0),0);
+                        return (
+                          <div key={pi} style={{padding:"10px 16px",borderBottom:pi<Object.values(art.parties).length-1?`1px solid ${S.bdr}`:"none",display:"flex",alignItems:"flex-start",gap:12,flexWrap:"wrap"}}>
+                            <div style={{flex:1,minWidth:160}}>
+                              <div style={{fontSize:13,fontWeight:700}}>{p.party}</div>
+                              <div style={{fontSize:11,color:S.txt2}}>{p.phone}</div>
+                              <div style={{display:"flex",gap:6,marginTop:6,flexWrap:"wrap"}}>
+                                {p.txns.map((t,ti)=>(
+                                  <div key={ti} style={{background:t.type==="challan"?S.teaL:S.purL,borderRadius:6,padding:"3px 8px",fontSize:11}}>
+                                    <span style={{fontWeight:700,color:t.type==="challan"?S.tea:S.pur}}>{t.number}</span>
+                                    <span style={{color:S.txt2,marginLeft:4}}>{t.colorName}</span>
+                                    <span style={{color:S.txt3,marginLeft:4}}>{fmtD(t.date)}</span>
+                                  </div>
+                                ))}
+                              </div>
+                            </div>
+                            <div style={{display:"flex",gap:12,alignItems:"center",flexShrink:0}}>
+                              <div style={{textAlign:"right"}}>
+                                <div style={{fontSize:13,fontWeight:800,color:S.tea}}>{pQty} pcs</div>
+                                <div style={{fontSize:12,fontWeight:700,color:S.grn}}>{fmtR(pAmt)}</div>
+                              </div>
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  );
+                })}
+              </div>
+          )}
+
+          {/* ── PARTY-WISE VIEW ── */}
+          {reportView==="party" && (
+            partyEntries.length===0
+            ? <div style={{textAlign:"center",padding:"40px 20px",color:S.txt3}}><Users size={36} style={{margin:"0 auto 10px",display:"block"}}/><div>No data yet</div></div>
+            : <div style={{display:"flex",flexDirection:"column",gap:8}}>
+                {partyEntries.map((p,pi) => {
+                  const totalQty = Object.values(p.articles).reduce((s,a)=>s+a.txns.reduce((ss,t)=>ss+t.sizes.reduce((sss,sz)=>sss+sz.qty,0),0),0);
+                  const totalAmt = Object.values(p.articles).reduce((s,a)=>s+a.txns.reduce((ss,t)=>ss+t.sizes.reduce((sss,sz)=>sss+(sz.amount||0),0),0),0);
+                  return (
+                    <div key={pi} style={{background:S.card,borderRadius:12,border:`1px solid ${S.bdr}`,overflow:"hidden"}}>
+                      {/* Party Header */}
+                      <div style={{padding:"12px 16px",background:`linear-gradient(135deg,${S.purL},${S.pnkL})`,display:"flex",alignItems:"center",gap:12,borderBottom:`1px solid ${S.bdr}`}}>
+                        <div style={{width:42,height:42,borderRadius:"50%",background:`hsl(${p.party.split("").reduce((a,c)=>a+c.charCodeAt(0),0)%360},50%,88%)`,display:"flex",alignItems:"center",justifyContent:"center",fontSize:16,fontWeight:800,flexShrink:0,color:`hsl(${p.party.split("").reduce((a,c)=>a+c.charCodeAt(0),0)%360},50%,35%)`}}>{p.party.charAt(0)}</div>
+                        <div style={{flex:1}}>
+                          <div style={{fontSize:14,fontWeight:800}}>{p.party}</div>
+                          <div style={{fontSize:11,color:S.txt2}}>{p.phone}</div>
+                        </div>
+                        <div style={{display:"flex",gap:16,flexShrink:0}}>
+                          <div style={{textAlign:"center"}}><div style={{fontSize:9,fontWeight:700,color:S.txt3,textTransform:"uppercase"}}>Articles</div><div style={{fontSize:16,fontWeight:800,color:S.pur}}>{Object.keys(p.articles).length}</div></div>
+                          <div style={{textAlign:"center"}}><div style={{fontSize:9,fontWeight:700,color:S.txt3,textTransform:"uppercase"}}>Total Pcs</div><div style={{fontSize:16,fontWeight:800,color:S.tea}}>{totalQty}</div></div>
+                          <div style={{textAlign:"center"}}><div style={{fontSize:9,fontWeight:700,color:S.txt3,textTransform:"uppercase"}}>Total Amt</div><div style={{fontSize:15,fontWeight:800,color:S.grn}}>{fmtR(totalAmt)}</div></div>
+                        </div>
+                      </div>
+                      {/* Article rows */}
+                      {Object.values(p.articles).map((a,ai) => {
+                        const aQty = a.txns.reduce((s,t)=>s+t.sizes.reduce((ss,sz)=>ss+sz.qty,0),0);
+                        const aAmt = a.txns.reduce((s,t)=>s+t.sizes.reduce((ss,sz)=>ss+(sz.amount||0),0),0);
+                        return (
+                          <div key={ai} style={{padding:"10px 16px",borderBottom:ai<Object.values(p.articles).length-1?`1px solid ${S.bdr}`:"none",display:"flex",alignItems:"flex-start",gap:12,flexWrap:"wrap"}}>
+                            {a.colorImage && <img src={a.colorImage} alt="" style={{width:36,height:36,borderRadius:6,objectFit:"cover",flexShrink:0}}/>}
+                            <div style={{flex:1,minWidth:160}}>
+                              <div style={{fontSize:13,fontWeight:700}}>{a.articleName} <span style={{fontSize:10,color:S.txt3,fontFamily:S.fm}}>{a.skuId}</span></div>
+                              <div style={{display:"flex",gap:6,marginTop:5,flexWrap:"wrap"}}>
+                                {a.txns.map((t,ti)=>(
+                                  <div key={ti} style={{background:t.type==="challan"?S.teaL:S.purL,borderRadius:6,padding:"3px 8px",fontSize:11}}>
+                                    <span style={{fontWeight:700,color:t.type==="challan"?S.tea:S.pur}}>{t.number}</span>
+                                    <span style={{color:S.txt2,marginLeft:4}}>{t.colorName}</span>
+                                    <span style={{color:S.txt3,marginLeft:4}}>{t.sizes.map(sz=>`${sz.size}:${sz.qty}`).join(" ")}</span>
+                                  </div>
+                                ))}
+                              </div>
+                            </div>
+                            <div style={{textAlign:"right",flexShrink:0}}>
+                              <div style={{fontSize:13,fontWeight:800,color:S.tea}}>{aQty} pcs</div>
+                              <div style={{fontSize:12,fontWeight:700,color:S.grn}}>{fmtR(aAmt)}</div>
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  );
+                })}
+              </div>
+          )}
+        </>;
+      })()}
       </div>
 
       {/* ═══ MODALS ═══ */}
@@ -2278,7 +2878,12 @@ GUIDELINES:
         {/* Step 1: Customer */}
         <div style={{marginBottom:16}}>
           <label style={{fontSize:10,fontWeight:700,color:S.txt3,letterSpacing:.8,textTransform:"uppercase",display:"block",marginBottom:6}}>① Customer</label>
-          <Sel options={customers.map(c => ({v:c.id, l:`${c.name} — ${c.phone}`}))} placeholder="Choose customer..." value={chf.customerId} onChange={e => setChf({...chf, customerId:e.target.value})}/>
+          <SearchSel
+            options={customers.map(c => ({v:c.id, l:`${c.name} — ${c.phone}`}))}
+            placeholder="Search customer name or phone..."
+            value={chf.customerId}
+            onChange={v => setChf({...chf, customerId:v})}
+          />
           {selCust && (
             <div style={{background:S.accL,borderRadius:10,padding:"10px 14px",marginTop:8,display:"flex",flexWrap:"wrap",gap:12,fontSize:12}}>
               <span style={{fontWeight:700,color:S.acc}}>{selCust.name}</span>
@@ -2308,7 +2913,7 @@ GUIDELINES:
             </div>
           )}
 
-          {chf.items.map((it, ii) => {
+          {(chf.items||[]).map((it, ii) => {
             const art = getChArt(it);
             const col = getChCol(it);
             const availSizes = col ? art.selectedSizes.filter(sz => (col.sizes[sz]?.qty || 0) > 0) : [];
@@ -2379,6 +2984,183 @@ GUIDELINES:
           </Btn>
         </div>
       </Modal>
+
+      {/* Stock View Modal */}
+      <Modal open={showStockView} onClose={()=>setShowStockView(false)} title="Available Stock" sub="Live inventory across all articles, colors and sizes" w={800}>
+        <div style={{display:"flex",gap:8,marginBottom:12,flexWrap:"wrap"}}>
+          <div style={{padding:"8px 14px",background:S.grnL,borderRadius:8,fontSize:12,fontWeight:700,color:S.grn}}>{articles.length} Articles</div>
+          <div style={{padding:"8px 14px",background:S.accL,borderRadius:8,fontSize:12,fontWeight:700,color:S.acc}}>{totalPcs} Total Pcs</div>
+          <div style={{padding:"8px 14px",background:S.ambL,borderRadius:8,fontSize:12,fontWeight:700,color:S.amb}}>{lowStock} Low Stock</div>
+        </div>
+        <div style={{display:"flex",flexDirection:"column",gap:8,maxHeight:"65vh",overflowY:"auto"}}>
+          {[...new Set(articles.map(a=>a.category))].map(cat => {
+            const catArts = articles.filter(a=>a.category===cat);
+            return (
+              <div key={cat}>
+                <div style={{fontSize:11,fontWeight:800,color:S.txt3,textTransform:"uppercase",letterSpacing:1,padding:"6px 0 4px",borderBottom:`2px solid ${S.acc}`,marginBottom:6}}>{cat}</div>
+                {catArts.map(a => {
+                  const tot = artTot(a);
+                  return (
+                    <div key={a.id} style={{background:S.bg,borderRadius:10,padding:12,border:`1px solid ${tot===0?S.red+"40":S.bdr}`,marginBottom:6}}>
+                      <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:8}}>
+                        <div>
+                          <span style={{fontSize:13,fontWeight:700}}>{a.name}</span>
+                          <span style={{fontSize:10,color:S.txt3,fontFamily:S.fm,marginLeft:8}}>{a.skuId}</span>
+                          <span style={{fontSize:10,color:S.txt2,marginLeft:8}}>{a.fabricQuality}</span>
+                        </div>
+                        <span style={{fontSize:14,fontWeight:800,color:tot===0?S.red:tot<=10?S.amb:S.grn}}>{tot} pcs</span>
+                      </div>
+                      {a.colors.map((c,ci) => {
+                        const cTot = Object.values(c.sizes).reduce((s,v)=>s+(v.qty||0),0);
+                        if (cTot === 0) return null;
+                        return (
+                          <div key={ci} style={{display:"flex",alignItems:"center",gap:8,marginBottom:4,padding:"6px 8px",background:S.card,borderRadius:8,flexWrap:"wrap"}}>
+                            {c.image && <img src={c.image} alt="" style={{width:28,height:28,borderRadius:5,objectFit:"cover"}}/>}
+                            <ColorDot name={c.name}/>
+                            <div style={{display:"flex",gap:4,flexWrap:"wrap",flex:1}}>
+                              {a.selectedSizes.map(sz => {
+                                const q = c.sizes[sz]?.qty||0;
+                                if (q===0) return null;
+                                return <span key={sz} style={{fontSize:11,fontWeight:700,background:q<=3?S.redL:q<=5?S.ambL:S.grnL,color:q<=3?S.red:q<=5?S.amb:S.grn,padding:"2px 8px",borderRadius:6}}>{sz}: {q}</span>;
+                              })}
+                            </div>
+                            <span style={{fontSize:11,fontWeight:700,color:S.txt2}}>{cTot} pcs</span>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  );
+                })}
+              </div>
+            );
+          })}
+        </div>
+      </Modal>
+
+      {/* Create Manual Order Modal */}
+      <Modal open={showCreateOrder} onClose={()=>{setShowCreateOrder(false);setEditingOrder(null);setOrderForm2(blankOF);}} title={editingOrder?"Edit Order":"Create Customer Order"} sub="Create a proforma order to share with customer — no stock deducted" w={720}>
+        <div style={{background:S.purL,borderRadius:8,padding:"8px 12px",marginBottom:14,fontSize:12,color:S.pur,fontWeight:600}}>
+          📋 This creates a shareable order slip. Stock is NOT deducted. Use Challans to deduct stock.
+        </div>
+        <div style={{marginBottom:14}}>
+          <label style={{fontSize:10,fontWeight:700,color:S.txt3,letterSpacing:.8,textTransform:"uppercase",display:"block",marginBottom:6}}>① Customer</label>
+          <SearchSel
+            options={customers.map(c=>({v:c.id,l:`${c.name} — ${c.phone}`}))}
+            placeholder="Search customer name or phone..."
+            value={orderForm2.customerId}
+            onChange={v=>setOrderForm2({...orderForm2,customerId:v})}
+          />
+        </div>
+        <Inp label="Remarks / Note" placeholder="e.g. Sample order, Approval pending..." value={orderForm2.remarks} onChange={e=>setOrderForm2({...orderForm2,remarks:e.target.value})} cStyle={{marginBottom:14}}/>
+        <div>
+          <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:10}}>
+            <label style={{fontSize:10,fontWeight:700,color:S.txt3,letterSpacing:.8,textTransform:"uppercase"}}>② Items</label>
+            <Btn sz="sm" icon={<Plus size={13}/>} onClick={()=>setOrderForm2({...orderForm2,items:[...orderForm2.items,{articleId:"",colorIdx:"",sizes:{}}]})}>Add Item</Btn>
+          </div>
+          {orderForm2.items.length===0 && <div style={{padding:24,background:S.bg,borderRadius:10,textAlign:"center",color:S.txt2,fontSize:13,border:`2px dashed ${S.bdr}`}}><Package size={24} style={{margin:"0 auto 8px",display:"block",color:S.txt3}}/>Click "Add Item" to add articles</div>}
+          {(orderForm2.items||[]).map((it,ii)=>{
+            const art = articles.find(a=>a.id===it.articleId);
+            const col = art?.colors[Number(it.colorIdx)];
+            return (
+              <div key={ii} style={{background:S.bg,borderRadius:12,border:`1px solid ${S.bdr}`,padding:14,marginBottom:10}}>
+                <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:10}}>
+                  <span style={{fontSize:13,fontWeight:700,color:S.acc}}>Item #{ii+1}</span>
+                  <button onClick={()=>setOrderForm2({...orderForm2,items:orderForm2.items.filter((_,j)=>j!==ii)})} style={{background:S.redL,border:"none",borderRadius:6,padding:5,cursor:"pointer",display:"flex",color:S.red}}><Trash2 size={13}/></button>
+                </div>
+                <div className="form-grid2" style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10,marginBottom:col?12:0}}>
+                  <SearchSel label="Article" options={articles.map(a=>({v:a.id,l:`${a.name} (${a.skuId})`}))} placeholder="Search article..." value={it.articleId} onChange={v=>{const ni=[...orderForm2.items];ni[ii]={articleId:v,colorIdx:"",sizes:{}};setOrderForm2({...orderForm2,items:ni});}}/>
+                  {art && <Sel label="Color" options={art.colors.map((c,ci)=>({v:String(ci),l:c.name}))} placeholder="Select color..." value={it.colorIdx} onChange={e=>{const ni=[...orderForm2.items];ni[ii]={...ni[ii],colorIdx:e.target.value,sizes:{}};setOrderForm2({...orderForm2,items:ni});}}/>}
+                </div>
+                {col && art && (
+                  <div style={{display:"flex",gap:8,flexWrap:"wrap"}}>
+                    {art.selectedSizes.map(sz=>{
+                      const qty = it.sizes[sz]||0;
+                      const defaultPrice = col.sizes[sz]?.price||0;
+                      const customPrice = it.prices?.[sz];
+                      const displayPrice = customPrice !== undefined ? customPrice : defaultPrice;
+                      return (
+                        <div key={sz} style={{background:S.card,borderRadius:10,border:`2px solid ${qty>0?S.pur:S.bdr}`,padding:"8px 10px",textAlign:"center",minWidth:80}}>
+                          <div style={{fontSize:13,fontWeight:800,color:qty>0?S.pur:S.txt2,marginBottom:4}}>{sz}</div>
+                          <input type="number" min="0" placeholder="0" value={it.sizes[sz]||""} onChange={e=>{const ni=[...orderForm2.items];ni[ii]={...ni[ii],sizes:{...ni[ii].sizes,[sz]:Math.max(0,Number(e.target.value)||0)}};setOrderForm2({...orderForm2,items:ni});}} style={{width:"100%",textAlign:"center",background:"transparent",border:"none",outline:"none",color:S.txt,fontFamily:S.fm,fontSize:20,fontWeight:800,padding:"2px 0"}}/>
+                          <div style={{borderTop:`1px dashed ${S.bdr}`,paddingTop:5,marginTop:4,display:"flex",alignItems:"center",justifyContent:"center",gap:2}}>
+                            <span style={{fontSize:11,color:S.txt3,fontWeight:600}}>₹</span>
+                            <input type="number" min="0" placeholder={defaultPrice||"Rate"} value={displayPrice||""} onChange={e=>{const ni=[...orderForm2.items];ni[ii]={...ni[ii],prices:{...ni[ii].prices,[sz]:Math.max(0,Number(e.target.value)||0)}};setOrderForm2({...orderForm2,items:ni});}} style={{width:"100%",textAlign:"center",background:"transparent",border:"none",outline:"none",color:S.grn,fontFamily:S.fm,fontSize:13,fontWeight:700,padding:0}}/>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+            );
+          })}
+        </div>
+        {orderForm2.items.some(it=>Object.values(it.sizes).some(q=>q>0)) && (
+          <div style={{padding:"10px 14px",background:S.purL,borderRadius:10,marginTop:8,display:"flex",justifyContent:"flex-end",gap:20}}>
+            <div style={{textAlign:"center"}}><div style={{fontSize:9,fontWeight:700,color:S.txt3,textTransform:"uppercase"}}>Total Qty</div><div style={{fontSize:18,fontWeight:800,color:S.pur,fontFamily:S.fm}}>{orderForm2.items.reduce((s,it)=>s+Object.values(it.sizes).reduce((ss,q)=>ss+q,0),0)}</div></div>
+            <div style={{textAlign:"center"}}><div style={{fontSize:9,fontWeight:700,color:S.txt3,textTransform:"uppercase"}}>Total Amt</div><div style={{fontSize:18,fontWeight:800,color:S.grn,fontFamily:S.fm}}>{fmtR(orderForm2.items.reduce((s,it)=>{const art=articles.find(a=>a.id===it.articleId);const col=art?.colors[Number(it.colorIdx)];return s+Object.entries(it.sizes).reduce((ss,[sz,q])=>{const p=(it.prices?.[sz]!==undefined&&it.prices[sz]!=="")? Number(it.prices[sz]):(col?.sizes[sz]?.price||0);return ss+q*p;},0);},0))}</div></div>
+          </div>
+        )}
+        <div style={{display:"flex",justifyContent:"flex-end",gap:8,marginTop:16,paddingTop:14,borderTop:`1px solid ${S.bdr}`}}>
+          <Btn v="secondary" onClick={()=>{setShowCreateOrder(false);setEditingOrder(null);setOrderForm2(blankOF);}}>Cancel</Btn>
+          <Btn onClick={saveManualOrder} disabled={!orderForm2.customerId||orderForm2.items.length===0} icon={<Check size={14}/>}>{editingOrder?"Update Order":"Save Order"}</Btn>
+          <Btn onClick={()=>saveManualOrder(true)} disabled={!orderForm2.customerId||orderForm2.items.length===0} icon={<Printer size={14}/>} style={{background:`linear-gradient(135deg,${S.pur},#9333ea)`}}>{editingOrder?"Update & Print":"Save & Print"}</Btn>
+        </div>
+      </Modal>
+
+      {/* Convert Order to Challan Modal */}
+      <Modal open={showConvertOrder} onClose={()=>setShowConvertOrder(false)} title="Convert to Delivery Challan" sub="Select which items to include — stock will be deducted" w={580}>
+        {convertingOrder && <>
+          <div style={{background:S.grnL,borderRadius:10,padding:"10px 14px",marginBottom:14,display:"flex",alignItems:"center",gap:10,fontSize:12}}>
+            <FileText size={16} color={S.grn}/>
+            <div><strong>{convertingOrder.number}</strong> · {convertingOrder.customer?.name} · {convertingOrder.totalQty} pcs · {fmtR(convertingOrder.totalAmt)}</div>
+          </div>
+          <div style={{fontSize:11,fontWeight:700,color:S.txt3,textTransform:"uppercase",letterSpacing:.8,marginBottom:8}}>Select Items to Include</div>
+          <div style={{display:"flex",flexDirection:"column",gap:8,marginBottom:16}}>
+            {(convertingOrder.items||[]).map((it,i) => {
+              const checked = !!convertSelItems[i];
+              return (
+                <div key={i} onClick={()=>setConvertSelItems(prev=>({...prev,[i]:!prev[i]}))} style={{display:"flex",alignItems:"center",gap:12,padding:"12px 14px",background:checked?S.grnL:S.bg,borderRadius:10,border:`2px solid ${checked?S.grn:S.bdr}`,cursor:"pointer",transition:"all .15s"}}>
+                  <div style={{width:22,height:22,borderRadius:6,border:`2px solid ${checked?S.grn:S.bdr}`,background:checked?S.grn:"#fff",display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0}}>
+                    {checked && <Check size={13} color="#fff"/>}
+                  </div>
+                  {it.colorImage && <img src={it.colorImage} alt="" style={{width:40,height:40,borderRadius:8,objectFit:"cover",flexShrink:0}}/>}
+                  <div style={{flex:1,minWidth:0}}>
+                    <div style={{fontSize:13,fontWeight:700}}>{it.articleName}</div>
+                    <div style={{fontSize:11,color:S.txt2,marginTop:2}}>{it.colorName} · {(Array.isArray(it.sizes)?it.sizes:[{size:it.size,qty:it.qty,price:it.price||0,amount:it.amount||0}]).map(sz=>`${sz.size}×${sz.qty}`).join(", ")}</div>
+                  </div>
+                  <div style={{textAlign:"right",flexShrink:0}}>
+                    <div style={{fontSize:12,fontWeight:700,color:S.grn}}>{fmtR((Array.isArray(it.sizes)?it.sizes:[{size:it.size,qty:it.qty,price:it.price||0,amount:it.amount||0}]).reduce((s,sz)=>s+sz.amount,0))}</div>
+                    <div style={{fontSize:11,color:S.txt2}}>{(Array.isArray(it.sizes)?it.sizes:[{size:it.size,qty:it.qty,price:it.price||0,amount:it.amount||0}]).reduce((s,sz)=>s+sz.qty,0)} pcs</div>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+          <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",padding:"10px 14px",background:S.accL,borderRadius:10,marginBottom:14}}>
+            <span style={{fontSize:12,color:S.txt2}}>{Object.values(convertSelItems).filter(Boolean).length} of {convertingOrder.items.length} items selected</span>
+            <div style={{display:"flex",gap:8}}>
+              <button onClick={()=>{const a={};convertingOrder.items.forEach((_,i)=>a[i]=true);setConvertSelItems(a);}} style={{fontSize:11,fontWeight:600,color:S.acc,background:"none",border:"none",cursor:"pointer",fontFamily:S.f}}>Select All</button>
+              <button onClick={()=>setConvertSelItems({})} style={{fontSize:11,fontWeight:600,color:S.txt2,background:"none",border:"none",cursor:"pointer",fontFamily:S.f}}>Clear</button>
+            </div>
+          </div>
+          <div style={{background:S.ambL,borderRadius:8,padding:"8px 12px",marginBottom:14,fontSize:11,color:S.amb}}>
+            ⚠️ Stock will be deducted when challan is saved. You can edit quantities in the challan form.
+          </div>
+          <div style={{display:"flex",justifyContent:"flex-end",gap:8}}>
+            <Btn v="secondary" onClick={()=>setShowConvertOrder(false)}>Cancel</Btn>
+            <Btn onClick={doConvertToChallan} disabled={Object.values(convertSelItems).filter(Boolean).length===0} icon={<FileText size={14}/>}>Open in Challan Form</Btn>
+          </div>
+        </>}
+      </Modal>
+
+      <ConfirmDialog
+        open={!!confirmDlg}
+        title={confirmDlg?.title}
+        message={confirmDlg?.message}
+        onYes={() => { confirmDlg?.onYes(); setConfirmDlg(null); }}
+        onNo={() => setConfirmDlg(null)}
+      />
 
       <ChatBot articles={articles} co={co} chatMsgs={chatMsgs} setChatMsgs={setChatMsgs} chatOpen={chatOpen} setChatOpen={setChatOpen} chatInput={chatInput} setChatInput={setChatInput} chatLoading={chatLoading} setChatLoading={setChatLoading} chatEndRef={chatEndRef} chatInputRef={chatInputRef} buildSystemPrompt={buildSystemPrompt}/>
     </div>
