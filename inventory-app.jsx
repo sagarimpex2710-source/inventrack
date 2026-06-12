@@ -188,52 +188,39 @@ const SearchSel = ({label, options, value, onChange, placeholder="Search..."}) =
   const selected = options.find(o => o.v === value);
   const filtered = options.filter(o => o.l.toLowerCase().includes(query.toLowerCase()));
 
-  // Close on outside click
-  useState(() => {
+  useEffect(() => {
     const handler = e => { if (ref.current && !ref.current.contains(e.target)) setOpen(false); };
     document.addEventListener("mousedown", handler);
     return () => document.removeEventListener("mousedown", handler);
-  });
+  }, []);
 
   return (
     <div ref={ref} style={{display:"flex",flexDirection:"column",gap:3,position:"relative"}}>
       {label && <label style={{fontSize:10,fontWeight:700,color:S.txt3,letterSpacing:.8,textTransform:"uppercase",fontFamily:S.f}}>{label}</label>}
-      <div
-        onClick={() => { setOpen(o => !o); setQuery(""); }}
-        style={{display:"flex",alignItems:"center",background:S.bg,border:`1px solid ${open ? S.acc : S.bdr}`,borderRadius:8,padding:"0 10px",cursor:"pointer",minHeight:38,transition:"border-color .15s"}}
-      >
-        {selected
-          ? <span style={{flex:1,fontSize:13,color:S.txt,fontFamily:S.f,padding:"9px 0",lineHeight:1}}>{selected.l}</span>
-          : <span style={{flex:1,fontSize:13,color:S.txt3,fontFamily:S.f,padding:"9px 0"}}>{placeholder}</span>
-        }
-        {selected
-          ? <button onClick={e => { e.stopPropagation(); onChange(""); setOpen(false); }} style={{background:"none",border:"none",padding:2,cursor:"pointer",display:"flex",color:S.txt3}}><X size={13}/></button>
-          : <ChevronDown size={13} style={{color:S.txt3,transform:open?"rotate(180deg)":"none",transition:"transform .15s"}}/>
-        }
+      <div style={{display:"flex",alignItems:"center",background:S.bg,border:`1px solid ${open?S.acc:S.bdr}`,borderRadius:8,padding:"0 10px",transition:"border-color .15s"}}>
+        <Search size={13} style={{color:S.txt3,flexShrink:0,marginRight:6}}/>
+        <input
+          value={open ? query : (selected ? selected.l : "")}
+          onChange={e => { setQuery(e.target.value); setOpen(true); }}
+          onFocus={() => { setQuery(""); setOpen(true); }}
+          placeholder={selected ? selected.l : placeholder}
+          style={{flex:1,border:"none",outline:"none",background:"transparent",fontSize:13,color:S.txt,fontFamily:S.f,padding:"9px 0",cursor:"text"}}
+        />
+        {value && <button onClick={e=>{e.stopPropagation();onChange("");setQuery("");setOpen(false);}} style={{background:"none",border:"none",padding:2,cursor:"pointer",display:"flex",color:S.txt3,flexShrink:0}}><X size={13}/></button>}
+        {!value && <ChevronDown size={13} style={{color:S.txt3,transform:open?"rotate(180deg)":"none",transition:"transform .15s",flexShrink:0}}/>}
       </div>
       {open && (
-        <div style={{position:"absolute",top:"100%",left:0,right:0,zIndex:200,background:S.card,border:`1px solid ${S.bdrD}`,borderRadius:10,boxShadow:"0 8px 24px rgba(0,0,0,.12)",marginTop:4,overflow:"hidden"}}>
-          <div style={{padding:"8px 10px",borderBottom:`1px solid ${S.bdr}`,display:"flex",alignItems:"center",gap:6,background:S.bg}}>
-            <Search size={13} style={{color:S.txt3,flexShrink:0}}/>
-            <input
-              autoFocus
-              value={query}
-              onChange={e => setQuery(e.target.value)}
-              placeholder="Type to search..."
-              style={{flex:1,border:"none",outline:"none",background:"transparent",fontSize:13,color:S.txt,fontFamily:S.f}}
-            />
-            {query && <button onClick={() => setQuery("")} style={{background:"none",border:"none",padding:0,cursor:"pointer",display:"flex",color:S.txt3}}><X size={12}/></button>}
-          </div>
-          <div style={{maxHeight:200,overflowY:"auto"}}>
+        <div style={{position:"absolute",top:"100%",left:0,right:0,zIndex:500,background:S.card,border:`1px solid ${S.bdrD}`,borderRadius:10,boxShadow:"0 8px 24px rgba(0,0,0,.15)",marginTop:4,overflow:"hidden"}}>
+          <div style={{maxHeight:220,overflowY:"auto"}}>
             {filtered.length === 0
               ? <div style={{padding:"14px 12px",fontSize:12,color:S.txt3,textAlign:"center"}}>No results found</div>
               : filtered.map(o => (
                   <div
                     key={o.v}
-                    onClick={() => { onChange(o.v); setOpen(false); setQuery(""); }}
-                    style={{padding:"10px 12px",fontSize:13,cursor:"pointer",background:o.v === value ? S.accL : "transparent",color:o.v === value ? S.acc : S.txt,fontWeight:o.v === value ? 600 : 400,fontFamily:S.f,borderBottom:`1px solid ${S.bdr}`,transition:"background .1s"}}
-                    onMouseEnter={e => { if (o.v !== value) e.currentTarget.style.background = S.bg; }}
-                    onMouseLeave={e => { if (o.v !== value) e.currentTarget.style.background = "transparent"; }}
+                    onMouseDown={e => { e.preventDefault(); onChange(o.v); setOpen(false); setQuery(""); }}
+                    style={{padding:"10px 12px",fontSize:13,cursor:"pointer",background:o.v===value?S.accL:"transparent",color:o.v===value?S.acc:S.txt,fontWeight:o.v===value?600:400,fontFamily:S.f,borderBottom:`1px solid ${S.bdr}`}}
+                    onMouseEnter={e=>{if(o.v!==value)e.currentTarget.style.background=S.bg;}}
+                    onMouseLeave={e=>{if(o.v!==value)e.currentTarget.style.background=o.v===value?S.accL:"transparent";}}
                   >
                     {o.l}
                   </div>
